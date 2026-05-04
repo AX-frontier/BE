@@ -9,6 +9,7 @@ import com.axprontier.api.ai.repository.AiResponseLogRepository;
 import com.axprontier.api.ai.service.AiGatewayService;
 import com.axprontier.api.conversation.entity.Conversation;
 import com.axprontier.api.conversation.service.ConversationService;
+import com.axprontier.api.library.service.LibrarySearchLogService;
 import com.axprontier.api.query.entity.AgentRun;
 import com.axprontier.api.query.entity.Query;
 import com.axprontier.api.query.entity.QueryResponse;
@@ -41,6 +42,7 @@ public class QueryService {
     private final AiRequestLogRepository aiRequestLogRepository;
     private final AiResponseLogRepository aiResponseLogRepository;
     private final AiGatewayService aiGatewayService;
+    private final LibrarySearchLogService librarySearchLogService;
     private final ObjectMapper objectMapper;
 
     public QueryService(
@@ -52,6 +54,7 @@ public class QueryService {
             AiRequestLogRepository aiRequestLogRepository,
             AiResponseLogRepository aiResponseLogRepository,
             AiGatewayService aiGatewayService,
+            LibrarySearchLogService librarySearchLogService,
             ObjectMapper objectMapper
     ) {
         this.conversationService = conversationService;
@@ -62,6 +65,7 @@ public class QueryService {
         this.aiRequestLogRepository = aiRequestLogRepository;
         this.aiResponseLogRepository = aiResponseLogRepository;
         this.aiGatewayService = aiGatewayService;
+        this.librarySearchLogService = librarySearchLogService;
         this.objectMapper = objectMapper;
     }
 
@@ -106,6 +110,7 @@ public class QueryService {
                 aiResponse.confidence(),
                 aiResponse.fallbackReason()
         ));
+        librarySearchLogService.saveIfLibrarySearch(query, aiResponse);
 
         return new QueryCreateResponse(
                 query.getQueryUid(),

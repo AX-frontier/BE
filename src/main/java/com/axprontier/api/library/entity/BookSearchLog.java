@@ -46,4 +46,24 @@ public class BookSearchLog extends BaseEntity {
         this.resultCount = resultCount;
         this.resultsJson = resultsJson;
     }
+
+    public Long getId() {
+        return id;
+    }
+
+    public Query getQuery() {
+        return query;
+    }
+
+    public String getKeyword() {
+        return keyword;
+    }
+
+    public int getResultCount() {
+        return resultCount;
+    }
+
+    public Map<String, Object> getResultsJson() {
+        return resultsJson;
+    }
 }
