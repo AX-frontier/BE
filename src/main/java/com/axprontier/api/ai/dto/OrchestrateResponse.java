@@ -10,6 +10,9 @@ public record OrchestrateResponse(
         List<SourceDto> sources,
         BigDecimal confidence,
         boolean fallbackUsed,
-        String fallbackReason
+        String fallbackReason,
+        String searchKeyword,
+        Integer resultCount,
+        List<MatchedBookDto> matchedBooks
 ) {
 }
