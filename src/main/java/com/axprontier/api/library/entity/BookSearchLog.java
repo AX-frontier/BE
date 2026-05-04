@@ -1,6 +1,6 @@
 package com.axprontier.api.library.entity;
 
-import com.axprontier.api.global.entity.CreatedAtEntity;
+import com.axprontier.api.global.entity.BaseEntity;
 import com.axprontier.api.query.entity.Query;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -17,7 +17,7 @@ import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(schema = "library", name = "book_search_logs")
-public class BookSearchLog extends CreatedAtEntity {
+public class BookSearchLog extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

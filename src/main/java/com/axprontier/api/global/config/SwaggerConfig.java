@@ -2,7 +2,7 @@ package com.axprontier.api.global.config;
 
 import com.axprontier.api.global.annotation.ApiErrorCodeExample;
 import com.axprontier.api.global.annotation.ApiErrorCodeExamples;
-import com.axprontier.api.global.error.ErrorResponseCode;
+import com.axprontier.api.global.apiPayload.code.BaseErrorCode;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.examples.Example;
@@ -49,14 +49,14 @@ public class SwaggerConfig {
 
     private void addErrorCodeExample(Operation operation, Class<? extends Enum<?>> enumClass, String name) {
         for (Enum<?> constant : enumClass.getEnumConstants()) {
-            if (constant.name().equals(name) && constant instanceof ErrorResponseCode errorCode) {
+            if (constant.name().equals(name) && constant instanceof BaseErrorCode errorCode) {
                 addErrorResponse(operation, errorCode);
                 return;
             }
         }
     }
 
-    private void addErrorResponse(Operation operation, ErrorResponseCode errorCode) {
+    private void addErrorResponse(Operation operation, BaseErrorCode errorCode) {
         String httpStatusCode = String.valueOf(errorCode.getStatus().value());
         String exampleJson = String.format("""
                 {
