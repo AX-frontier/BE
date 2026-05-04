@@ -1,6 +1,6 @@
 package com.axprontier.api.review.entity;
 
-import com.axprontier.api.global.entity.CreatedAtEntity;
+import com.axprontier.api.global.entity.BaseEntity;
 import com.axprontier.api.query.entity.Query;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -14,7 +14,7 @@ import jakarta.persistence.Table;
 
 @Entity
 @Table(schema = "doc", name = "review_requests")
-public class ReviewRequest extends CreatedAtEntity {
+public class ReviewRequest extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

@@ -1,6 +1,6 @@
 package com.axprontier.api.ai.entity;
 
-import com.axprontier.api.global.entity.CreatedAtEntity;
+import com.axprontier.api.global.entity.BaseEntity;
 import com.axprontier.api.query.entity.Query;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -18,7 +18,7 @@ import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(schema = "core", name = "ai_requests")
-public class AiRequestLog extends CreatedAtEntity {
+public class AiRequestLog extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
