@@ -1,6 +1,6 @@
 package com.axprontier.api.query.controller;
 
-import com.axprontier.api.global.response.ApiResponse;
+import com.axprontier.api.global.apiPayload.ApiResponse;
 import com.axprontier.api.query.dto.QueryCreateRequest;
 import com.axprontier.api.query.dto.QueryCreateResponse;
 import com.axprontier.api.query.service.QueryService;

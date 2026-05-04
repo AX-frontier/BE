@@ -1,6 +1,6 @@
 package com.axprontier.api.query.entity;
 
-import com.axprontier.api.global.entity.CreatedAtEntity;
+import com.axprontier.api.global.entity.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -17,7 +17,7 @@ import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(schema = "core", name = "responses")
-public class QueryResponse extends CreatedAtEntity {
+public class QueryResponse extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

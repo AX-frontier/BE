@@ -4,8 +4,8 @@ import com.axprontier.api.conversation.entity.Conversation;
 import com.axprontier.api.conversation.dto.ConversationCreateRequest;
 import com.axprontier.api.conversation.dto.ConversationResponse;
 import com.axprontier.api.conversation.repository.ConversationRepository;
-import com.axprontier.api.global.error.BusinessException;
-import com.axprontier.api.global.error.ErrorCode;
+import com.axprontier.api.global.apiPayload.code.GeneralErrorCode;
+import com.axprontier.api.global.apiPayload.exception.GeneralException;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,7 +28,7 @@ public class ConversationService {
     @Transactional(readOnly = true)
     public Conversation getByUid(UUID conversationUid) {
         return conversationRepository.findByConversationUid(conversationUid)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Conversation not found."));
+                .orElseThrow(() -> new GeneralException(GeneralErrorCode.NOT_FOUND, "Conversation not found."));
     }
 
     private ConversationResponse toResponse(Conversation conversation) {
