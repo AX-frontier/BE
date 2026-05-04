@@ -113,6 +113,42 @@ POST /api/conversations
 POST /api/conversations/{conversationUid}/queries
 ```
 
+## Library Agent 연동
+
+학술정보관 전용 챗봇 로직은 Python FastAPI의 Library Agent가 담당합니다. Spring Boot는 사용자 질문과 최종 응답 흐름을 관리하고, Library Agent 응답에 포함된 도서 검색 메타데이터만 `library.book_search_logs`에 저장합니다.
+
+FastAPI 내부 계약은 아래 형태를 기준으로 합니다.
+
+```http
+POST /library/chat
+```
+
+```json
+{
+  "queryUid": "uuid",
+  "traceId": "uuid",
+  "conversationUid": "uuid",
+  "message": "도서 검색 또는 학술정보관 안내 질문"
+}
+```
+
+응답은 기존 오케스트레이터 응답 필드에 Library 검색 로그용 필드를 선택적으로 포함합니다.
+
+```json
+{
+  "targetAgent": "LIBRARY",
+  "intent": "BOOK_SEARCH",
+  "answer": "답변 본문",
+  "sources": [],
+  "confidence": 0.9,
+  "fallbackUsed": false,
+  "fallbackReason": null,
+  "searchKeyword": "검색어",
+  "resultCount": 3,
+  "matchedBooks": []
+}
+```
+
 ## Swagger
 
 서버 실행 후 아래 주소에서 API 문서를 확인합니다.
