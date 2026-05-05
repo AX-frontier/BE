@@ -4,6 +4,7 @@ import com.axprontier.api.ai.entity.AiRequestLog;
 import com.axprontier.api.ai.entity.AiResponseLog;
 import com.axprontier.api.ai.dto.OrchestrateRequest;
 import com.axprontier.api.ai.dto.OrchestrateResponse;
+import com.axprontier.api.ai.dto.TargetAgent;
 import com.axprontier.api.ai.repository.AiRequestLogRepository;
 import com.axprontier.api.ai.repository.AiResponseLogRepository;
 import com.axprontier.api.ai.service.AiGatewayService;
@@ -26,13 +27,15 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class QueryService {
 
-    private static final String ORCHESTRATE_ENDPOINT = "/ai/orchestrate";
+    private static final Logger log = LoggerFactory.getLogger(QueryService.class);
 
     private final ConversationService conversationService;
     private final QueryRepository queryRepository;
@@ -43,6 +46,7 @@ public class QueryService {
     private final AiResponseLogRepository aiResponseLogRepository;
     private final AiGatewayService aiGatewayService;
     private final LibrarySearchLogService librarySearchLogService;
+    private final RuleBasedAgentRouter ruleBasedAgentRouter;
     private final ObjectMapper objectMapper;
 
     public QueryService(
@@ -55,6 +59,7 @@ public class QueryService {
             AiResponseLogRepository aiResponseLogRepository,
             AiGatewayService aiGatewayService,
             LibrarySearchLogService librarySearchLogService,
+            RuleBasedAgentRouter ruleBasedAgentRouter,
             ObjectMapper objectMapper
     ) {
         this.conversationService = conversationService;
@@ -66,6 +71,7 @@ public class QueryService {
         this.aiResponseLogRepository = aiResponseLogRepository;
         this.aiGatewayService = aiGatewayService;
         this.librarySearchLogService = librarySearchLogService;
+        this.ruleBasedAgentRouter = ruleBasedAgentRouter;
         this.objectMapper = objectMapper;
     }
 
@@ -81,16 +87,18 @@ public class QueryService {
                 conversation.getConversationUid(),
                 query.getQueryText()
         );
+        TargetAgent targetAgent = ruleBasedAgentRouter.route(query.getQueryText());
+        String endpoint = aiGatewayService.endpointFor(targetAgent);
 
         AiRequestLog aiRequestLog = aiRequestLogRepository.save(new AiRequestLog(
                 query,
                 traceId,
-                ORCHESTRATE_ENDPOINT,
+                endpoint.isBlank() ? "FALLBACK" : endpoint,
                 toMap(orchestrateRequest)
         ));
 
         Instant startedAt = Instant.now();
-        OrchestrateResponse aiResponse = aiGatewayService.orchestrate(orchestrateRequest);
+        OrchestrateResponse aiResponse = aiGatewayService.chat(targetAgent, orchestrateRequest);
         long latencyMs = Duration.between(startedAt, Instant.now()).toMillis();
 
         aiResponseLogRepository.save(new AiResponseLog(aiRequestLog, 200, toMap(aiResponse), latencyMs));
@@ -111,6 +119,17 @@ public class QueryService {
                 aiResponse.fallbackReason()
         ));
         librarySearchLogService.saveIfLibrarySearch(query, aiResponse);
+        log.info(
+                "core_orchestrator queryUid={} traceId={} conversationUid={} targetAgent={} intent={} status={} latencyMs={} fallbackUsed={}",
+                query.getQueryUid(),
+                traceId,
+                conversation.getConversationUid(),
+                aiResponse.targetAgent(),
+                aiResponse.intent(),
+                "COMPLETED",
+                latencyMs,
+                aiResponse.fallbackUsed()
+        );
 
         return new QueryCreateResponse(
                 query.getQueryUid(),

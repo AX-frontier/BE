@@ -21,6 +21,7 @@ server:
 ai:
   server:
     base-url: ${AI_SERVER_BASE_URL:http://localhost:8000}
+    document-review-path: ${AI_SERVER_DOCUMENT_REVIEW_PATH:/document-review/chat}
 
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
