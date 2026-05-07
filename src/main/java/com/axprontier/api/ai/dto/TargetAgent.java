@@ -4,5 +4,16 @@ public enum TargetAgent {
     DOCUMENT_REVIEW,
     LIBRARY,
     MAIN,
-    FALLBACK
+    FALLBACK;
+
+    public static TargetAgent from(String value) {
+        if (value == null || value.isBlank()) {
+            return FALLBACK;
+        }
+        try {
+            return TargetAgent.valueOf(value.trim().toUpperCase());
+        } catch (IllegalArgumentException exception) {
+            return FALLBACK;
+        }
+    }
 }
