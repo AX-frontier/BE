@@ -21,6 +21,7 @@ server:
 ai:
   server:
     base-url: ${AI_SERVER_BASE_URL:http://localhost:8000}
+    library-path: ${AI_SERVER_LIBRARY_PATH:/library/chat}
     document-review-path: ${AI_SERVER_DOCUMENT_REVIEW_PATH:/document-review/chat}
 
 cors:

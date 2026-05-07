@@ -32,7 +32,7 @@ class LibrarySearchLogServiceTest {
                 "LIBRARY",
                 "BOOK_SEARCH",
                 "도서 1건을 찾았습니다.",
-                List.of(new SourceDto("학술정보관", "https://library.example")),
+                List.of(new SourceDto(10L, "학술정보관", "https://library.example", "2026-05-01T00:00:00+00:00")),
                 BigDecimal.valueOf(0.91),
                 false,
                 null,
