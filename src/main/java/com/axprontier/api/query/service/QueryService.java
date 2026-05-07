@@ -139,7 +139,11 @@ public class QueryService {
                 aiResponse.answer(),
                 aiResponse.sources(),
                 aiResponse.confidence(),
-                aiResponse.fallbackUsed()
+                aiResponse.fallbackUsed(),
+                aiResponse.fallbackReason(),
+                aiResponse.searchKeyword(),
+                aiResponse.resultCount(),
+                aiResponse.matchedBooks()
         );
     }
 

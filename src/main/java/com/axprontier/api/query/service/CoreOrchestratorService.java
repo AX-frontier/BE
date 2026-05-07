@@ -56,7 +56,10 @@ public class CoreOrchestratorService {
                     response.sources(),
                     response.confidence(),
                     response.fallbackUsed(),
-                    response.fallbackReason()
+                    response.fallbackReason(),
+                    response.searchKeyword(),
+                    response.resultCount(),
+                    response.matchedBooks()
             );
         } catch (RuntimeException exception) {
             long latencyMs = Duration.between(startedAt, Instant.now()).toMillis();
