@@ -11,15 +11,18 @@ import org.springframework.web.client.RestClient;
 public class HttpAiOrchestratorClient implements AiOrchestratorClient {
 
     private final RestClient restClient;
+    private final String libraryPath;
     private final String documentReviewPath;
 
     public HttpAiOrchestratorClient(
             @Value("${ai.server.base-url}") String aiServerBaseUrl,
+            @Value("${ai.server.library-path}") String libraryPath,
             @Value("${ai.server.document-review-path}") String documentReviewPath
     ) {
         this.restClient = RestClient.builder()
                 .baseUrl(aiServerBaseUrl)
                 .build();
+        this.libraryPath = libraryPath;
         this.documentReviewPath = documentReviewPath;
     }
 
@@ -36,7 +39,7 @@ public class HttpAiOrchestratorClient implements AiOrchestratorClient {
     public String endpointFor(TargetAgent targetAgent) {
         return switch (targetAgent) {
             case MAIN -> "/main/chat";
-            case LIBRARY -> "/library/chat";
+            case LIBRARY -> libraryPath;
             case DOCUMENT_REVIEW -> documentReviewPath;
             case FALLBACK -> "";
         };
