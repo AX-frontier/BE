@@ -2,26 +2,122 @@ package com.axprontier.api.query.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.axprontier.api.ai.dto.MatchedBookDto;
 import com.axprontier.api.ai.dto.OrchestrateRequest;
 import com.axprontier.api.ai.dto.OrchestrateResponse;
 import com.axprontier.api.ai.dto.RouteRequest;
 import com.axprontier.api.ai.dto.RouteResponse;
+import com.axprontier.api.ai.dto.SourceDto;
+import com.axprontier.api.ai.dto.TargetAgent;
 import com.axprontier.api.ai.service.AiGatewayService;
 import com.axprontier.api.query.dto.CoreQueryRequest;
 import com.axprontier.api.query.dto.CoreQueryResponse;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class CoreOrchestratorServiceTest {
 
     private final AiGatewayService aiGatewayService = org.mockito.Mockito.mock(AiGatewayService.class);
     private final CoreOrchestratorService service = new CoreOrchestratorService(aiGatewayService);
+
+    @Test
+    @DisplayName("route targetAgent가 LIBRARY이면 /library/chat 대상 에이전트 호출로 이어지고 응답 필드가 보존된다")
+    void callsLibraryAgentAndPreservesLibraryFieldsWhenRouteTargetIsLibrary() {
+        CoreQueryRequest request = request("오늘 도서관 몇 시까지 열어요?");
+        RouteResponse routeResponse = routeResponse(request, "LIBRARY");
+        OrchestrateResponse libraryResponse = libraryResponse();
+
+        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
+        when(aiGatewayService.chat(eq(TargetAgent.LIBRARY), any(OrchestrateRequest.class))).thenReturn(libraryResponse);
+
+        CoreQueryResponse response = service.query(request);
+
+        assertThat(response.targetAgent()).isEqualTo("LIBRARY");
+        assertThat(response.answer()).isEqualTo("오늘 도서관은 오후 9시까지 운영합니다.");
+        assertThat(response.sources()).containsExactly(new SourceDto(1L, "도서관 운영시간", "https://library.example/hours", "2026-05-08"));
+        assertThat(response.confidence()).isEqualByComparingTo("0.91");
+        assertThat(response.fallbackUsed()).isFalse();
+        assertThat(response.fallbackReason()).isNull();
+        assertThat(response.searchKeyword()).isEqualTo("도서관 운영시간");
+        assertThat(response.resultCount()).isEqualTo(1);
+        assertThat(response.matchedBooks()).containsExactly(new MatchedBookDto(
+                10L,
+                "BIB-10",
+                "REG-10",
+                "Effective Java",
+                "Joshua Bloch",
+                "Addison-Wesley",
+                2018,
+                "005.133 B651e",
+                "BOOK",
+                "LIB",
+                "3층 자료실",
+                "A-12"
+        ));
+
+        ArgumentCaptor<OrchestrateRequest> requestCaptor = ArgumentCaptor.forClass(OrchestrateRequest.class);
+        verify(aiGatewayService).chat(eq(TargetAgent.LIBRARY), requestCaptor.capture());
+        assertThat(requestCaptor.getValue().queryUid()).isEqualTo(request.queryUid());
+        assertThat(requestCaptor.getValue().traceId()).isEqualTo(request.traceId());
+        assertThat(requestCaptor.getValue().conversationUid()).isEqualTo(request.conversationUid());
+        assertThat(requestCaptor.getValue().message()).isEqualTo(request.message());
+    }
+
+    @Test
+    @DisplayName("route targetAgent가 MAIN이면 Library Agent를 호출하지 않는다")
+    void callsMainAgentAndDoesNotCallLibraryAgentWhenRouteTargetIsMain() {
+        CoreQueryRequest request = request("복수전공 신청 기간 알려줘");
+        RouteResponse routeResponse = routeResponse(request, "MAIN");
+        OrchestrateResponse mainResponse = new OrchestrateResponse(
+                "MAIN",
+                "ACADEMIC_CALENDAR",
+                "복수전공 신청 기간은 학사 공지를 확인해주세요.",
+                List.of(),
+                BigDecimal.valueOf(0.84),
+                false,
+                null,
+                null,
+                null,
+                null
+        );
+
+        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
+        when(aiGatewayService.chat(eq(TargetAgent.MAIN), any(OrchestrateRequest.class))).thenReturn(mainResponse);
+
+        CoreQueryResponse response = service.query(request);
+
+        assertThat(response.targetAgent()).isEqualTo("MAIN");
+        assertThat(response.fallbackUsed()).isFalse();
+        verify(aiGatewayService).chat(eq(TargetAgent.MAIN), any(OrchestrateRequest.class));
+        verify(aiGatewayService, never()).chat(eq(TargetAgent.LIBRARY), any(OrchestrateRequest.class));
+    }
+
+    @Test
+    @DisplayName("Python Library Agent timeout/500 등 호출 실패 시 fallback 응답을 반환한다")
+    void returnsFallbackWhenLibraryAgentCallFails() {
+        CoreQueryRequest request = request("파이썬 책 어디 있어?");
+        RouteResponse routeResponse = routeResponse(request, "LIBRARY");
+        OrchestrateResponse fallbackResponse = fallbackResponse("AGENT_CALL_FAILED");
+
+        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
+        when(aiGatewayService.chat(eq(TargetAgent.LIBRARY), any(OrchestrateRequest.class))).thenThrow(new RuntimeException("500"));
+        when(aiGatewayService.fallbackResponse(routeResponse.intent(), "AGENT_CALL_FAILED")).thenReturn(fallbackResponse);
+
+        CoreQueryResponse response = service.query(request);
+
+        assertThat(response.targetAgent()).isEqualTo("FALLBACK");
+        assertThat(response.fallbackUsed()).isTrue();
+        assertThat(response.fallbackReason()).isEqualTo("AGENT_CALL_FAILED");
+    }
 
     @Test
     void returnsFallbackWithoutAgentCallWhenRouteTargetIsFallback() {
@@ -85,6 +181,34 @@ class CoreOrchestratorServiceTest {
                 null,
                 null,
                 null
+        );
+    }
+
+    private OrchestrateResponse libraryResponse() {
+        return new OrchestrateResponse(
+                "LIBRARY",
+                "LIBRARY_HOURS",
+                "오늘 도서관은 오후 9시까지 운영합니다.",
+                List.of(new SourceDto(1L, "도서관 운영시간", "https://library.example/hours", "2026-05-08")),
+                BigDecimal.valueOf(0.91),
+                false,
+                null,
+                "도서관 운영시간",
+                1,
+                List.of(new MatchedBookDto(
+                        10L,
+                        "BIB-10",
+                        "REG-10",
+                        "Effective Java",
+                        "Joshua Bloch",
+                        "Addison-Wesley",
+                        2018,
+                        "005.133 B651e",
+                        "BOOK",
+                        "LIB",
+                        "3층 자료실",
+                        "A-12"
+                ))
         );
     }
 }
