@@ -25,6 +25,20 @@ ai:
     document-review-path: ${AI_SERVER_DOCUMENT_REVIEW_PATH:/document-review/chat}
     timeout-seconds: ${AI_SERVER_TIMEOUT_SECONDS:60}
 
+crawler:
+  api:
+    trigger-path: ${CRAWLER_API_TRIGGER_PATH:/ingestion/run}
+    status-path: ${CRAWLER_API_STATUS_PATH:/ingestion/status/{jobId}}
+  schedule:
+    cron: ${CRAWLER_SCHEDULE_CRON:-}
+    default-sources: ${CRAWLER_DEFAULT_SOURCES:hansung_notice,hsel_library}
+    default-since-months: ${CRAWLER_DEFAULT_SINCE_MONTHS:6}
+    default-max-pages: ${CRAWLER_DEFAULT_MAX_PAGES:5}
+    default-max-notice-pages: ${CRAWLER_DEFAULT_MAX_NOTICE_PAGES:30}
+  polling:
+    enabled: ${CRAWLER_POLLING_ENABLED:true}
+    fixed-delay-ms: ${CRAWLER_POLLING_FIXED_DELAY_MS:60000}
+
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
 
