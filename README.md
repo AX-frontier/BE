@@ -26,6 +26,7 @@ com.axprontier.api
 ├── conversation  익명 대화
 ├── query         질문/응답 흐름
 ├── ai            AI 서버 연동
+├── crawler       크롤링 실행 요청/결과 로그
 ├── review        문서 검토
 ├── library       도서관/도서 검색
 └── audit         감사 로그
@@ -48,6 +49,7 @@ global        공통 설정, 예외, 응답 포맷
 conversation  익명 대화 세션
 query         사용자 질문, 라우팅 결과, 에이전트 실행 기록, 최종 응답
 ai            AI 서버 호출 DTO, 클라이언트, 요청/응답 로그
+crawler       Python 크롤링 API 호출, 크롤링 요청/결과 로그
 review        전자결재 문서 검토 요청, 결과, 지적사항
 library       도서 검색 요청/결과 로그
 audit         감사 로그
@@ -63,6 +65,7 @@ AgentRun
 QueryResponse
 AiRequestLog
 AiResponseLog
+CrawlerJobLog
 ReviewRequest
 ReviewResult
 ReviewFinding
@@ -112,6 +115,29 @@ POST /api/conversations
 ```http
 POST /api/conversations/{conversationUid}/queries
 ```
+
+Python 크롤링 API를 호출하고 요청/결과 로그를 저장합니다.
+
+```http
+POST /api/crawlers/trigger
+```
+
+Python 크롤링 작업 상태를 조회하고 로그를 갱신합니다.
+
+```http
+GET /api/crawlers/status/{jobId}
+```
+
+Spring Boot는 크롤링 작업 내용을 직접 처리하지 않고, Python 서버에 실행만 요청합니다. 실제 크롤링, 문서 생성, 청킹, 임베딩, RAG 저장소 갱신은 Python 서버가 담당합니다.
+
+Python 서버 연동 주소는 아래 계약을 기준으로 합니다.
+
+```text
+POST ${AI_SERVER_BASE_URL}/ingestion/run
+GET  ${AI_SERVER_BASE_URL}/ingestion/status/{jobId}
+```
+
+`/ingestion/run` 응답으로 받은 `jobId`는 `CrawlerJobLog`에 저장하고, Spring Scheduler가 주기적으로 상태를 polling하여 로그를 갱신합니다.
 
 ## Library Agent 연동
 
@@ -166,6 +192,18 @@ DB_URL
 DB_USERNAME
 DB_PASSWORD
 AI_SERVER_BASE_URL
+AI_SERVER_LIBRARY_PATH
+AI_SERVER_DOCUMENT_REVIEW_PATH
+AI_SERVER_TIMEOUT_SECONDS
+CRAWLER_API_TRIGGER_PATH
+CRAWLER_API_STATUS_PATH
+CRAWLER_SCHEDULE_CRON
+CRAWLER_DEFAULT_SOURCES
+CRAWLER_DEFAULT_SINCE_MONTHS
+CRAWLER_DEFAULT_MAX_PAGES
+CRAWLER_DEFAULT_MAX_NOTICE_PAGES
+CRAWLER_POLLING_ENABLED
+CRAWLER_POLLING_FIXED_DELAY_MS
 CORS_ALLOWED_ORIGINS
 ```
 
