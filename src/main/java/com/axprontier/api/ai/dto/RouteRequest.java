@@ -9,6 +9,6 @@ public record RouteRequest(
         String message
 ) {
     public OrchestrateRequest toOrchestrateRequest() {
-        return new OrchestrateRequest(queryUid, traceId, conversationUid, message);
+        return new OrchestrateRequest(queryUid, traceId, conversationUid, message, null);
     }
 }
