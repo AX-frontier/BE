@@ -86,7 +86,8 @@ public class QueryService {
                 query.getQueryUid(),
                 traceId,
                 conversation.getConversationUid(),
-                query.getQueryText()
+                query.getQueryText(),
+                null
         );
         RouteRequest routeRequest = new RouteRequest(
                 query.getQueryUid(),

@@ -41,6 +41,14 @@ public class AiGatewayService {
                 fallbackReason,
                 null,
                 null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null
         );
     }
