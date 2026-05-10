@@ -35,6 +35,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.client.RestClientResponseException;
 
 @Service
 public class QueryService {
@@ -104,6 +106,13 @@ public class QueryService {
 
         RouteResponse routeResponse = routeResult.response();
         TargetAgent targetAgent = TargetAgent.from(routeResponse.targetAgent());
+        log.info(
+                "core_orchestrator_agent_selected queryUid={} traceId={} finalAgent={} libraryChatCalled={}",
+                query.getQueryUid(),
+                traceId,
+                targetAgent.name(),
+                targetAgent == TargetAgent.LIBRARY
+        );
         queryRouteRepository.save(new QueryRoute(
                 query,
                 routeResponse.intent(),
@@ -162,15 +171,37 @@ public class QueryService {
             RouteResponse routeResponse = aiGatewayService.route(routeRequest);
             long latencyMs = Duration.between(startedAt, Instant.now()).toMillis();
             aiResponseLogRepository.save(new AiResponseLog(routeLog, 200, toMap(routeResponse), latencyMs));
+            log.info(
+                    "core_orchestrator_route queryUid={} traceId={} targetAgent={} intent={} confidence={} statusCode={} timeout=false latencyMs={} reason={}",
+                    query.getQueryUid(),
+                    routeRequest.traceId(),
+                    routeResponse.targetAgent(),
+                    routeResponse.intent(),
+                    routeResponse.confidence(),
+                    200,
+                    latencyMs,
+                    routeResponse.reason()
+            );
             return new RouteResult(routeResponse, latencyMs);
         } catch (RuntimeException exception) {
             long latencyMs = Duration.between(startedAt, Instant.now()).toMillis();
+            int statusCode = statusCode(exception);
             aiResponseLogRepository.save(new AiResponseLog(
                     routeLog,
-                    500,
+                    statusCode,
                     Map.of("error", exception.getClass().getSimpleName(), "message", safeMessage(exception)),
                     latencyMs
             ));
+            log.warn(
+                    "core_orchestrator_route queryUid={} traceId={} targetAgent={} statusCode={} timeout={} latencyMs={} error={}",
+                    query.getQueryUid(),
+                    routeRequest.traceId(),
+                    TargetAgent.FALLBACK.name(),
+                    statusCode,
+                    isTimeout(exception),
+                    latencyMs,
+                    exception.getClass().getSimpleName()
+            );
             return new RouteResult(null, latencyMs);
         }
     }
@@ -190,15 +221,38 @@ public class QueryService {
             OrchestrateResponse aiResponse = aiGatewayService.chat(targetAgent, orchestrateRequest);
             long latencyMs = Duration.between(startedAt, Instant.now()).toMillis();
             aiResponseLogRepository.save(new AiResponseLog(aiRequestLog, 200, toMap(aiResponse), latencyMs));
+            log.info(
+                    "core_orchestrator_agent_call queryUid={} traceId={} targetAgent={} endpoint={} libraryChatCalled={} statusCode={} timeout=false latencyMs={}",
+                    query.getQueryUid(),
+                    orchestrateRequest.traceId(),
+                    targetAgent.name(),
+                    endpoint,
+                    targetAgent == TargetAgent.LIBRARY,
+                    200,
+                    latencyMs
+            );
             return new AgentResult(aiResponse, latencyMs);
         } catch (RuntimeException exception) {
             long latencyMs = Duration.between(startedAt, Instant.now()).toMillis();
+            int statusCode = statusCode(exception);
             aiResponseLogRepository.save(new AiResponseLog(
                     aiRequestLog,
-                    500,
+                    statusCode,
                     Map.of("error", exception.getClass().getSimpleName(), "message", safeMessage(exception)),
                     latencyMs
             ));
+            log.warn(
+                    "core_orchestrator_agent_call queryUid={} traceId={} targetAgent={} endpoint={} libraryChatCalled={} statusCode={} timeout={} latencyMs={} error={}",
+                    query.getQueryUid(),
+                    orchestrateRequest.traceId(),
+                    targetAgent.name(),
+                    endpoint,
+                    targetAgent == TargetAgent.LIBRARY,
+                    statusCode,
+                    isTimeout(exception),
+                    latencyMs,
+                    exception.getClass().getSimpleName()
+            );
             return new AgentResult(null, latencyMs);
         }
     }
@@ -239,7 +293,7 @@ public class QueryService {
             long latencyMs
     ) {
         log.info(
-                "core_orchestrator queryUid={} traceId={} conversationUid={} targetAgent={} intent={} status={} latencyMs={} fallbackUsed={} routeReason={}",
+                "core_orchestrator queryUid={} traceId={} conversationUid={} targetAgent={} intent={} status={} latencyMs={} fallbackUsed={} libraryChatCalled={} routeReason={}",
                 query.getQueryUid(),
                 traceId,
                 conversation.getConversationUid(),
@@ -248,6 +302,7 @@ public class QueryService {
                 status,
                 latencyMs,
                 response.fallbackUsed(),
+                routeResponse != null && TargetAgent.LIBRARY.name().equalsIgnoreCase(routeResponse.targetAgent()),
                 routeResponse == null ? "-" : routeResponse.reason()
         );
     }
@@ -271,6 +326,28 @@ public class QueryService {
 
     private String safeMessage(Exception exception) {
         return exception.getMessage() == null ? "" : exception.getMessage();
+    }
+
+    private int statusCode(RuntimeException exception) {
+        if (exception instanceof RestClientResponseException responseException) {
+            return responseException.getStatusCode().value();
+        }
+        return 500;
+    }
+
+    private boolean isTimeout(RuntimeException exception) {
+        if (exception instanceof ResourceAccessException) {
+            return true;
+        }
+        Throwable cause = exception.getCause();
+        while (cause != null) {
+            String className = cause.getClass().getName().toLowerCase();
+            if (className.contains("timeout") || className.contains("timedout")) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 
     private Map<String, Object> toMap(Object value) {
