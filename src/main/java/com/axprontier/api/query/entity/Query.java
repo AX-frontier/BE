@@ -44,6 +44,13 @@ public class Query extends BaseEntity {
         this.channel = channel;
     }
 
+    public Query(UUID queryUid, Conversation conversation, String queryText, String channel) {
+        this.queryUid = queryUid;
+        this.conversation = conversation;
+        this.queryText = queryText;
+        this.channel = channel;
+    }
+
     public Long getId() {
         return id;
     }
