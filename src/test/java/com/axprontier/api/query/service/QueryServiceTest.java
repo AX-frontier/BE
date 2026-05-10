@@ -3,8 +3,11 @@ package com.axprontier.api.query.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.axprontier.api.ai.dto.MatchedBookDto;
 import com.axprontier.api.ai.dto.OrchestrateRequest;
 import com.axprontier.api.ai.dto.OrchestrateResponse;
 import com.axprontier.api.ai.dto.RouteEvidence;
@@ -101,6 +104,64 @@ class QueryServiceTest {
                 .isEqualTo(Map.of("sources", List.of(mainOfficialSource())));
     }
 
+    @Test
+    void savesLibrarySearchLogAndReturnsMatchedBooksWhenLibraryAgentResponds() {
+        UUID conversationUid = UUID.randomUUID();
+        Conversation conversation = new Conversation("도서관 질문");
+        QueryCreateRequest request = new QueryCreateRequest("클린 코드 책 찾아줘", "WEB");
+        RouteResponse routeResponse = libraryRouteResponse(conversation);
+        OrchestrateResponse libraryResponse = libraryOrchestrateResponse();
+
+        when(conversationService.getByUid(conversationUid)).thenReturn(conversation);
+        when(queryRepository.save(any(Query.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(queryRouteRepository.save(any(QueryRoute.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(agentRunRepository.save(any(AgentRun.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(queryResponseRepository.save(any(QueryResponse.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(aiRequestLogRepository.save(any(AiRequestLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(aiResponseLogRepository.save(any(AiResponseLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
+        when(aiGatewayService.endpointFor(TargetAgent.LIBRARY)).thenReturn("/library/chat");
+        when(aiGatewayService.chat(eq(TargetAgent.LIBRARY), any(OrchestrateRequest.class))).thenReturn(libraryResponse);
+
+        QueryCreateResponse response = service.create(conversationUid, request);
+
+        assertThat(response.targetAgent()).isEqualTo("LIBRARY");
+        assertThat(response.searchKeyword()).isEqualTo("클린 코드");
+        assertThat(response.resultCount()).isEqualTo(1);
+        assertThat(response.matchedBooks()).containsExactly(sampleBook());
+        verify(librarySearchLogService).saveIfLibrarySearch(any(Query.class), eq(libraryResponse));
+    }
+
+    @Test
+    void skipsLibrarySearchLogWhenLibraryAgentReturnsFallback() {
+        UUID conversationUid = UUID.randomUUID();
+        Conversation conversation = new Conversation("도서관 질문");
+        QueryCreateRequest request = new QueryCreateRequest("파이썬 책 어디 있어?", "WEB");
+        RouteResponse routeResponse = libraryRouteResponse(conversation);
+        OrchestrateResponse fallbackResponse = new OrchestrateResponse(
+                "FALLBACK", "BOOK_SEARCH", "일시적인 오류가 발생했습니다.",
+                List.of(), BigDecimal.ZERO, true, "AGENT_CALL_FAILED", null, null, null
+        );
+
+        when(conversationService.getByUid(conversationUid)).thenReturn(conversation);
+        when(queryRepository.save(any(Query.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(queryRouteRepository.save(any(QueryRoute.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(agentRunRepository.save(any(AgentRun.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(queryResponseRepository.save(any(QueryResponse.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(aiRequestLogRepository.save(any(AiRequestLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(aiResponseLogRepository.save(any(AiResponseLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
+        when(aiGatewayService.endpointFor(TargetAgent.LIBRARY)).thenReturn("/library/chat");
+        when(aiGatewayService.chat(eq(TargetAgent.LIBRARY), any(OrchestrateRequest.class))).thenThrow(new RuntimeException("500 Internal Server Error"));
+        when(aiGatewayService.fallbackResponse(routeResponse.intent(), "AGENT_CALL_FAILED")).thenReturn(fallbackResponse);
+
+        QueryCreateResponse response = service.create(conversationUid, request);
+
+        assertThat(response.fallbackUsed()).isTrue();
+        assertThat(response.fallbackReason()).isEqualTo("AGENT_CALL_FAILED");
+        verify(librarySearchLogService).saveIfLibrarySearch(any(Query.class), eq(fallbackResponse));
+    }
+
     private RouteResponse routeResponse(Conversation conversation) {
         return new RouteResponse(
                 UUID.randomUUID(),
@@ -154,6 +215,51 @@ class QueryServiceTest {
                 "2026학년도 1학기 복수·부전공 신청 및 변경신청 안내",
                 "https://www.hansung.ac.kr/bbs/hansung/2127/219610/artclView.do",
                 "2026-05-08"
+        );
+    }
+
+    private RouteResponse libraryRouteResponse(Conversation conversation) {
+        return new RouteResponse(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                conversation.getConversationUid(),
+                "LIBRARY",
+                "BOOK_SEARCH",
+                BigDecimal.valueOf(0.92),
+                "library reranked hits: 클린 코드 (lib-1, 0.920)",
+                null
+        );
+    }
+
+    private OrchestrateResponse libraryOrchestrateResponse() {
+        return new OrchestrateResponse(
+                "LIBRARY",
+                "BOOK_SEARCH",
+                "클린 코드 도서 1건을 찾았습니다.",
+                List.of(new SourceDto(10L, "학술정보관", "https://library.example", "2026-05-10")),
+                BigDecimal.valueOf(0.92),
+                false,
+                null,
+                "클린 코드",
+                1,
+                List.of(sampleBook())
+        );
+    }
+
+    private MatchedBookDto sampleBook() {
+        return new MatchedBookDto(
+                10L,
+                "BIB-1",
+                "REG-1",
+                "클린 코드",
+                "Robert C. Martin",
+                "인사이트",
+                2013,
+                "005.1 M381c",
+                "단행본",
+                "MAIN",
+                "중앙도서관",
+                "3층"
         );
     }
 }
