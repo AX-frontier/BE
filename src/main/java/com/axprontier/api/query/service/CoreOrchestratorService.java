@@ -95,7 +95,15 @@ public class CoreOrchestratorService {
                 response.fallbackReason(),
                 response.searchKeyword(),
                 response.resultCount(),
-                response.matchedBooks()
+                response.matchedBooks(),
+                response.summary(),
+                response.findings(),
+                response.criterionResults(),
+                response.checkRequiredItems(),
+                response.formatNoticeItems(),
+                response.extractedTables(),
+                response.revisedDocument(),
+                response.reviewMarkdown()
         );
     }
 }
