@@ -175,6 +175,43 @@ POST /library/chat
 }
 ```
 
+## Main Agent / Orchestrator 연동
+
+학사 공지 등 일반 학교 문의는 Python FastAPI의 Main Agent와 Orchestrator 계약을 따릅니다.
+
+```http
+POST /orchestrator/route
+POST /main/chat
+```
+
+`/main/chat` 응답 스키마는 기존 오케스트레이터 응답과 동일합니다. Spring Boot는 `answer` 문자열을 파싱하지 않고 저장 및 프론트 응답 payload로 그대로 전달합니다. 공식 링크 렌더링에 필요한 구조화 데이터는 `sources`를 우선 사용합니다.
+
+```json
+{
+  "targetAgent": "MAIN",
+  "intent": "ACADEMIC_NOTICE",
+  "answer": "\"복수전공 신청 기간\"와 관련해 확인할 수 있는 공식 링크를 찾았습니다.\n아래 링크들은 검색 결과에서 유사도가 높은 한성대학교 공지입니다.\n\n1. 2026학년도 1학기 복수·부전공 신청 및 변경신청 안내\n   복수·부전공 신청 안내에 대한 답변입니다.\n   이동하시려면 아래 링크를 눌러주세요.\n   https://www.hansung.ac.kr/bbs/hansung/2127/219610/artclView.do\n",
+  "sources": [
+    {
+      "id": 219610,
+      "title": "2026학년도 1학기 복수·부전공 신청 및 변경신청 안내",
+      "sourceUrl": "https://www.hansung.ac.kr/bbs/hansung/2127/219610/artclView.do",
+      "updatedAt": "2026-05-08"
+    }
+  ],
+  "confidence": 0.9,
+  "fallbackUsed": false,
+  "fallbackReason": null,
+  "searchKeyword": null,
+  "resultCount": null,
+  "matchedBooks": null
+}
+```
+
+프론트에서 `sources`를 별도 링크 카드로 렌더링하는 경우 `answer` 내부 URL과 중복 표시될 수 있습니다. 링크 UI는 `sources`를 기준으로 구성하고, `answer`는 안내 문구 원문으로 표시하는 것을 권장합니다.
+
+`/orchestrator/route`의 `targetAgent`, `intent`, `confidence`, `evidence` 필드 구조는 유지됩니다. Spring Boot는 Orchestrator가 반환한 `targetAgent`를 신뢰해 대상 Agent를 호출하며, `evidence.mainReason` 같은 `evidence.*Reason` 문자열은 디버깅용으로만 취급하고 비즈니스 분기 조건으로 사용하지 않습니다.
+
 ## Swagger
 
 서버 실행 후 아래 주소에서 API 문서를 확인합니다.
