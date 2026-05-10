@@ -31,6 +31,11 @@ public class Conversation extends BaseEntity {
         this.title = title;
     }
 
+    public Conversation(UUID conversationUid, String title) {
+        this.conversationUid = conversationUid;
+        this.title = title;
+    }
+
     public Long getId() {
         return id;
     }
