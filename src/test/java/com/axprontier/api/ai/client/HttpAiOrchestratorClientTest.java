@@ -11,6 +11,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import com.axprontier.api.ai.dto.OrchestrateResponse;
 import com.axprontier.api.ai.dto.RouteRequest;
 import com.axprontier.api.ai.dto.RouteResponse;
+import com.axprontier.api.ai.dto.SourceDto;
 import com.axprontier.api.ai.dto.TargetAgent;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -72,7 +73,13 @@ class HttpAiOrchestratorClientTest {
         OrchestrateResponse agentResponse = client.chat(TargetAgent.from(routeResponse.targetAgent()), request.toOrchestrateRequest());
 
         assertThat(routeResponse.targetAgent()).isEqualTo(targetAgent);
+        assertThat(routeResponse.evidence().mainReason())
+                .startsWith("main reranked hits:");
         assertThat(agentResponse.targetAgent()).isEqualTo(targetAgent);
+        if ("MAIN".equals(targetAgent)) {
+            assertThat(agentResponse.answer()).isEqualTo(mainOfficialLinkAnswer());
+            assertThat(agentResponse.sources()).containsExactly(mainOfficialSource());
+        }
         server.verify();
     }
 
@@ -90,7 +97,7 @@ class HttpAiOrchestratorClientTest {
                     "mainScore": 0.888,
                     "libraryScore": 0.4,
                     "documentReviewScore": 0.0,
-                    "mainReason": "main",
+                    "mainReason": "main reranked hits: 2026학년도 1학기 복수·부전공 신청 및 변경신청 안내 (main-1, 0.720), 학사 공지 (main-2, 0.640)",
                     "libraryReason": "library",
                     "documentReviewReason": "document"
                   }
@@ -99,6 +106,29 @@ class HttpAiOrchestratorClientTest {
     }
 
     private String agentResponseJson(String targetAgent) {
+        if ("MAIN".equals(targetAgent)) {
+            return """
+                    {
+                      "targetAgent": "MAIN",
+                      "intent": "ACADEMIC_NOTICE",
+                      "answer": %s,
+                      "sources": [
+                        {
+                          "id": 219610,
+                          "title": "2026학년도 1학기 복수·부전공 신청 및 변경신청 안내",
+                          "sourceUrl": "https://www.hansung.ac.kr/bbs/hansung/2127/219610/artclView.do",
+                          "updatedAt": "2026-05-08"
+                        }
+                      ],
+                      "confidence": 0.9,
+                      "fallbackUsed": false,
+                      "fallbackReason": null,
+                      "searchKeyword": null,
+                      "resultCount": null,
+                      "matchedBooks": null
+                    }
+                    """.formatted(jsonString(mainOfficialLinkAnswer()));
+        }
         return """
                 {
                   "targetAgent": "%s",
@@ -113,5 +143,33 @@ class HttpAiOrchestratorClientTest {
                   "matchedBooks": null
                 }
                 """.formatted(targetAgent);
+    }
+
+    private String mainOfficialLinkAnswer() {
+        return """
+                "복수전공 신청 기간"와 관련해 확인할 수 있는 공식 링크를 찾았습니다.
+                아래 링크들은 검색 결과에서 유사도가 높은 한성대학교 공지입니다.
+
+                1. 2026학년도 1학기 복수·부전공 신청 및 변경신청 안내
+                   복수·부전공 신청 안내에 대한 답변입니다.
+                   이동하시려면 아래 링크를 눌러주세요.
+                   https://www.hansung.ac.kr/bbs/hansung/2127/219610/artclView.do
+                """;
+    }
+
+    private SourceDto mainOfficialSource() {
+        return new SourceDto(
+                219610L,
+                "2026학년도 1학기 복수·부전공 신청 및 변경신청 안내",
+                "https://www.hansung.ac.kr/bbs/hansung/2127/219610/artclView.do",
+                "2026-05-08"
+        );
+    }
+
+    private String jsonString(String value) {
+        return "\"" + value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n") + "\"";
     }
 }

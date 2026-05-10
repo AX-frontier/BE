@@ -80,8 +80,8 @@ class CoreOrchestratorServiceTest {
         OrchestrateResponse mainResponse = new OrchestrateResponse(
                 "MAIN",
                 "ACADEMIC_CALENDAR",
-                "복수전공 신청 기간은 학사 공지를 확인해주세요.",
-                List.of(),
+                mainOfficialLinkAnswer(),
+                List.of(mainOfficialSource()),
                 BigDecimal.valueOf(0.84),
                 false,
                 null,
@@ -96,6 +96,8 @@ class CoreOrchestratorServiceTest {
         CoreQueryResponse response = service.query(request);
 
         assertThat(response.targetAgent()).isEqualTo("MAIN");
+        assertThat(response.answer()).isEqualTo(mainOfficialLinkAnswer());
+        assertThat(response.sources()).containsExactly(mainOfficialSource());
         assertThat(response.fallbackUsed()).isFalse();
         verify(aiGatewayService).chat(eq(TargetAgent.MAIN), any(OrchestrateRequest.class));
         verify(aiGatewayService, never()).chat(eq(TargetAgent.LIBRARY), any(OrchestrateRequest.class));
@@ -209,6 +211,27 @@ class CoreOrchestratorServiceTest {
                         "3층 자료실",
                         "A-12"
                 ))
+        );
+    }
+
+    private String mainOfficialLinkAnswer() {
+        return """
+                "복수전공 신청 기간"와 관련해 확인할 수 있는 공식 링크를 찾았습니다.
+                아래 링크들은 검색 결과에서 유사도가 높은 한성대학교 공지입니다.
+
+                1. 2026학년도 1학기 복수·부전공 신청 및 변경신청 안내
+                   복수·부전공 신청 안내에 대한 답변입니다.
+                   이동하시려면 아래 링크를 눌러주세요.
+                   https://www.hansung.ac.kr/bbs/hansung/2127/219610/artclView.do
+                """;
+    }
+
+    private SourceDto mainOfficialSource() {
+        return new SourceDto(
+                219610L,
+                "2026학년도 1학기 복수·부전공 신청 및 변경신청 안내",
+                "https://www.hansung.ac.kr/bbs/hansung/2127/219610/artclView.do",
+                "2026-05-08"
         );
     }
 }
