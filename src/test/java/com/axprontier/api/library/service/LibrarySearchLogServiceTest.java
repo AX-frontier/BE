@@ -66,7 +66,7 @@ class LibrarySearchLogServiceTest {
         assertThat(savedLog.getResultsJson())
                 .containsEntry("intent", "BOOK_SEARCH")
                 .containsEntry("fallbackUsed", false);
-        assertThat(savedLog.getResultsJson().get("matchedBooks")).asList().hasSize(1);
+        assertThat((List<?>) savedLog.getResultsJson().get("matchedBooks")).hasSize(1);
     }
 
     @Test
