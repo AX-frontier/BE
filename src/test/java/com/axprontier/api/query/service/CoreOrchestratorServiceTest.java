@@ -104,6 +104,28 @@ class CoreOrchestratorServiceTest {
     }
 
     @Test
+    @DisplayName("route targetAgent가 DOCUMENT_REVIEW이면 일반 채팅에서 문서검토 Agent를 바로 호출하지 않고 안내 응답을 반환한다")
+    void returnsGuideResponseWithoutCallingDocumentReviewAgentWhenRouteTargetIsDocumentReview() {
+        CoreQueryRequest request = request("전자결재 문서를 검토해줘");
+        RouteResponse routeResponse = routeResponse(request, "DOCUMENT_REVIEW");
+        OrchestrateResponse guideResponse = documentReviewGuideResponse(routeResponse);
+
+        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
+        when(aiGatewayService.documentReviewGuideResponse(routeResponse.intent(), routeResponse.confidence()))
+                .thenReturn(guideResponse);
+
+        CoreQueryResponse response = service.query(request);
+
+        assertThat(response.targetAgent()).isEqualTo("DOCUMENT_REVIEW");
+        assertThat(response.intent()).isEqualTo("TEST_INTENT");
+        assertThat(response.answer()).isEqualTo(documentReviewGuideAnswer());
+        assertThat(response.sources()).isEmpty();
+        assertThat(response.fallbackUsed()).isFalse();
+        assertThat(response.fallbackReason()).isNull();
+        verify(aiGatewayService, never()).chat(eq(TargetAgent.DOCUMENT_REVIEW), any(OrchestrateRequest.class));
+    }
+
+    @Test
     @DisplayName("Python Library Agent timeout/500 등 호출 실패 시 fallback 응답을 반환한다")
     void returnsFallbackWhenLibraryAgentCallFails() {
         CoreQueryRequest request = request("파이썬 책 어디 있어?");
@@ -184,6 +206,25 @@ class CoreOrchestratorServiceTest {
                 null,
                 null
         );
+    }
+
+    private OrchestrateResponse documentReviewGuideResponse(RouteResponse routeResponse) {
+        return new OrchestrateResponse(
+                "DOCUMENT_REVIEW",
+                routeResponse.intent(),
+                documentReviewGuideAnswer(),
+                List.of(),
+                routeResponse.confidence(),
+                false,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    private String documentReviewGuideAnswer() {
+        return "문서 검토는 문서 검토 화면에서 문서를 첨부하거나 본문을 입력한 뒤 진행해주세요.";
     }
 
     private OrchestrateResponse libraryResponse() {
