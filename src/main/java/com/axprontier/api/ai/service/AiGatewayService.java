@@ -23,6 +23,10 @@ public class AiGatewayService {
         return aiOrchestratorClient.route(request);
     }
 
+    public OrchestrateResponse orchestrateChat(OrchestrateRequest request) {
+        return aiOrchestratorClient.orchestrateChat(request);
+    }
+
     public OrchestrateResponse chat(TargetAgent targetAgent, OrchestrateRequest request) {
         if (targetAgent == TargetAgent.FALLBACK) {
             return fallbackResponse("FALLBACK", "NO_TARGET_AGENT");
