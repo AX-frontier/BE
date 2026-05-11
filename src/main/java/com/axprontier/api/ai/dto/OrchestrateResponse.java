@@ -22,7 +22,8 @@ public record OrchestrateResponse(
         List<Map<String, Object>> formatNoticeItems,
         List<Map<String, Object>> extractedTables,
         Map<String, Object> revisedDocument,
-        String reviewMarkdown
+        String reviewMarkdown,
+        boolean requiresDocumentInput
 ) {
     public OrchestrateResponse(
             String targetAgent,
@@ -54,7 +55,8 @@ public record OrchestrateResponse(
                 null,
                 null,
                 null,
-                null
+                null,
+                false
         );
     }
 }
