@@ -10,6 +10,8 @@ import com.axprontier.api.query.dto.CoreQueryRequest;
 import com.axprontier.api.query.dto.CoreQueryResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.math.BigDecimal;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -73,6 +75,26 @@ public class CoreOrchestratorService {
             OrchestrateResponse fallbackResponse = aiGatewayService.fallbackResponse(routeResponse.intent(), "ROUTE_TARGET_FALLBACK");
             logResult(request, routeResponse, fallbackResponse, "COMPLETED", startedAt, false, 200, false);
             return toCoreResponse(fallbackResponse);
+        }
+        if (targetAgent == TargetAgent.DOCUMENT_REVIEW) {
+            CoreQueryResponse documentInputResponse = documentInputRequiredResponse(routeResponse);
+            long latencyMs = Duration.between(startedAt, Instant.now()).toMillis();
+            log.info(
+                    "core_orchestrator queryUid={} traceId={} conversationUid={} targetAgent={} intent={} status={} latencyMs={} fallbackUsed={} libraryChatCalled={} statusCode={} timeout={} routeReason={}",
+                    request.queryUid(),
+                    request.traceId(),
+                    request.conversationUid(),
+                    TargetAgent.DOCUMENT_REVIEW.name(),
+                    "DOCUMENT_REVIEW_REQUIRED",
+                    "COMPLETED",
+                    latencyMs,
+                    false,
+                    false,
+                    200,
+                    false,
+                    routeResponse.reason()
+            );
+            return documentInputResponse;
         }
 
         OrchestrateRequest orchestrateRequest = routeRequest.toOrchestrateRequest();
@@ -172,7 +194,34 @@ public class CoreOrchestratorService {
                 response.formatNoticeItems(),
                 response.extractedTables(),
                 response.revisedDocument(),
-                response.reviewMarkdown()
+                response.reviewMarkdown(),
+                false,
+                null
+        );
+    }
+
+    private CoreQueryResponse documentInputRequiredResponse(RouteResponse routeResponse) {
+        return new CoreQueryResponse(
+                TargetAgent.DOCUMENT_REVIEW.name(),
+                "DOCUMENT_REVIEW_REQUIRED",
+                "검토할 전자결재 문서 본문을 입력해주세요.",
+                List.of(),
+                routeResponse.confidence() == null ? BigDecimal.ZERO : routeResponse.confidence(),
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                true,
+                "OFFICIAL_DOCUMENT"
         );
     }
 }

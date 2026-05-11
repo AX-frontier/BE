@@ -196,7 +196,9 @@ public class DocumentReviewService {
                 response.formatNoticeItems(),
                 response.extractedTables(),
                 response.revisedDocument(),
-                response.reviewMarkdown()
+                response.reviewMarkdown(),
+                false,
+                null
         );
     }
 }

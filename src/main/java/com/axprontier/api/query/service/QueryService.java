@@ -26,6 +26,7 @@ import com.axprontier.api.query.repository.QueryResponseRepository;
 import com.axprontier.api.query.repository.QueryRouteRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -84,13 +85,6 @@ public class QueryService {
         Query query = queryRepository.save(new Query(conversation, request.message(), request.channel()));
         UUID traceId = UUID.randomUUID();
 
-        OrchestrateRequest orchestrateRequest = new OrchestrateRequest(
-                query.getQueryUid(),
-                traceId,
-                conversation.getConversationUid(),
-                query.getQueryText(),
-                null
-        );
         RouteRequest routeRequest = new RouteRequest(
                 query.getQueryUid(),
                 traceId,
@@ -135,7 +129,34 @@ public class QueryService {
             logResult(query, traceId, conversation, routeResponse, fallbackResponse, "COMPLETED", routeResult.latencyMs());
             return toCreateResponse(query, traceId, fallbackResponse);
         }
+        if (targetAgent == TargetAgent.DOCUMENT_REVIEW) {
+            QueryCreateResponse documentInputResponse = documentInputRequiredResponse(query, traceId, routeResponse);
+            agentRunRepository.save(new AgentRun(query, TargetAgent.DOCUMENT_REVIEW.name(), "PENDING_DOCUMENT_INPUT"));
+            queryResponseRepository.save(new QueryResponse(
+                    query,
+                    documentInputResponse.answer(),
+                    Map.of("sources", List.of()),
+                    0,
+                    documentInputResponse.confidence(),
+                    null
+            ));
+            log.info(
+                    "core_orchestrator_document_input_required queryUid={} traceId={} conversationUid={} confidence={}",
+                    query.getQueryUid(),
+                    traceId,
+                    conversation.getConversationUid(),
+                    routeResponse.confidence()
+            );
+            return documentInputResponse;
+        }
 
+        OrchestrateRequest orchestrateRequest = new OrchestrateRequest(
+                query.getQueryUid(),
+                traceId,
+                conversation.getConversationUid(),
+                query.getQueryText(),
+                null
+        );
         AgentResult agentResult = callAgent(query, targetAgent, orchestrateRequest);
         OrchestrateResponse aiResponse = agentResult.response();
         String status = "COMPLETED";
@@ -320,7 +341,28 @@ public class QueryService {
                 aiResponse.fallbackReason(),
                 aiResponse.searchKeyword(),
                 aiResponse.resultCount(),
-                aiResponse.matchedBooks()
+                aiResponse.matchedBooks(),
+                false,
+                null
+        );
+    }
+
+    private QueryCreateResponse documentInputRequiredResponse(Query query, UUID traceId, RouteResponse routeResponse) {
+        return new QueryCreateResponse(
+                query.getQueryUid(),
+                traceId,
+                TargetAgent.DOCUMENT_REVIEW.name(),
+                "DOCUMENT_REVIEW_REQUIRED",
+                "검토할 전자결재 문서 본문을 입력해주세요.",
+                List.of(),
+                routeResponse.confidence() == null ? BigDecimal.ZERO : routeResponse.confidence(),
+                false,
+                null,
+                null,
+                null,
+                null,
+                true,
+                "OFFICIAL_DOCUMENT"
         );
     }
 
