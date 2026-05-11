@@ -5,8 +5,6 @@ import com.axprontier.api.ai.entity.AiRequestLog;
 import com.axprontier.api.ai.entity.AiResponseLog;
 import com.axprontier.api.ai.dto.OrchestrateRequest;
 import com.axprontier.api.ai.dto.OrchestrateResponse;
-import com.axprontier.api.ai.dto.RouteRequest;
-import com.axprontier.api.ai.dto.RouteResponse;
 import com.axprontier.api.ai.dto.TargetAgent;
 import com.axprontier.api.ai.repository.AiRequestLogRepository;
 import com.axprontier.api.ai.repository.AiResponseLogRepository;
@@ -26,7 +24,6 @@ import com.axprontier.api.query.repository.QueryResponseRepository;
 import com.axprontier.api.query.repository.QueryRouteRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -85,86 +82,29 @@ public class QueryService {
         Query query = queryRepository.save(new Query(conversation, request.message(), request.channel()));
         UUID traceId = UUID.randomUUID();
 
-        RouteRequest routeRequest = new RouteRequest(
-                query.getQueryUid(),
-                traceId,
-                conversation.getConversationUid(),
-                query.getQueryText()
-        );
-        RouteResult routeResult = route(query, routeRequest);
-        if (routeResult.response() == null) {
-            OrchestrateResponse fallbackResponse = aiGatewayService.fallbackResponse("FALLBACK", "ROUTE_FAILED");
-            saveFallbackResult(query, traceId, conversation, fallbackResponse, routeResult.latencyMs());
-            return toCreateResponse(query, traceId, fallbackResponse);
-        }
-
-        RouteResponse routeResponse = routeResult.response();
-        TargetAgent targetAgent = TargetAgent.from(routeResponse.targetAgent());
-        log.info(
-                "core_orchestrator_agent_selected queryUid={} traceId={} finalAgent={} libraryChatCalled={}",
-                query.getQueryUid(),
-                traceId,
-                targetAgent.name(),
-                targetAgent == TargetAgent.LIBRARY
-        );
-        queryRouteRepository.save(new QueryRoute(
-                query,
-                routeResponse.intent(),
-                targetAgent.name(),
-                routeResponse.confidence(),
-                targetAgent == TargetAgent.FALLBACK
-        ));
-
-        if (targetAgent == TargetAgent.FALLBACK) {
-            OrchestrateResponse fallbackResponse = aiGatewayService.fallbackResponse(routeResponse.intent(), "ROUTE_TARGET_FALLBACK");
-            agentRunRepository.save(new AgentRun(query, TargetAgent.FALLBACK.name(), "COMPLETED"));
-            queryResponseRepository.save(new QueryResponse(
-                    query,
-                    fallbackResponse.answer(),
-                    Map.of("sources", List.of()),
-                    0,
-                    fallbackResponse.confidence(),
-                    fallbackResponse.fallbackReason()
-            ));
-            logResult(query, traceId, conversation, routeResponse, fallbackResponse, "COMPLETED", routeResult.latencyMs());
-            return toCreateResponse(query, traceId, fallbackResponse);
-        }
-        if (targetAgent == TargetAgent.DOCUMENT_REVIEW) {
-            QueryCreateResponse documentInputResponse = documentInputRequiredResponse(query, traceId, routeResponse);
-            agentRunRepository.save(new AgentRun(query, TargetAgent.DOCUMENT_REVIEW.name(), "PENDING_DOCUMENT_INPUT"));
-            queryResponseRepository.save(new QueryResponse(
-                    query,
-                    documentInputResponse.answer(),
-                    Map.of("sources", List.of()),
-                    0,
-                    documentInputResponse.confidence(),
-                    null
-            ));
-            log.info(
-                    "core_orchestrator_document_input_required queryUid={} traceId={} conversationUid={} confidence={}",
-                    query.getQueryUid(),
-                    traceId,
-                    conversation.getConversationUid(),
-                    routeResponse.confidence()
-            );
-            return documentInputResponse;
-        }
-
         OrchestrateRequest orchestrateRequest = new OrchestrateRequest(
                 query.getQueryUid(),
                 traceId,
                 conversation.getConversationUid(),
                 query.getQueryText(),
-                null
+                request.document()
         );
-        AgentResult agentResult = callAgent(query, targetAgent, orchestrateRequest);
+        AgentResult agentResult = callOrchestrator(query, orchestrateRequest);
         OrchestrateResponse aiResponse = agentResult.response();
         String status = "COMPLETED";
         if (aiResponse == null) {
             status = "FAILED";
-            aiResponse = aiGatewayService.fallbackResponse(routeResponse.intent(), "AGENT_CALL_FAILED");
+            aiResponse = aiGatewayService.fallbackResponse("FALLBACK", "ORCHESTRATOR_CHAT_FAILED");
         }
 
+        TargetAgent targetAgent = TargetAgent.from(aiResponse.targetAgent());
+        queryRouteRepository.save(new QueryRoute(
+                query,
+                aiResponse.intent(),
+                targetAgent.name(),
+                aiResponse.confidence(),
+                aiResponse.fallbackUsed()
+        ));
         agentRunRepository.save(new AgentRun(query, targetAgent.name(), status));
         queryResponseRepository.save(new QueryResponse(
                 query,
@@ -175,80 +115,32 @@ public class QueryService {
                 aiResponse.fallbackReason()
         ));
         librarySearchLogService.saveIfLibrarySearch(query, aiResponse);
-        logResult(query, traceId, conversation, routeResponse, aiResponse, status, routeResult.latencyMs() + agentResult.latencyMs());
+        logResult(query, traceId, conversation, aiResponse, status, agentResult.latencyMs());
 
         return toCreateResponse(query, traceId, aiResponse);
     }
 
-    private RouteResult route(Query query, RouteRequest routeRequest) {
-        AiRequestLog routeLog = aiRequestLogRepository.save(new AiRequestLog(
-                query,
-                routeRequest.traceId(),
-                AiOrchestratorClient.ROUTE_ENDPOINT,
-                toMap(routeRequest)
-        ));
-        Instant startedAt = Instant.now();
-        try {
-            RouteResponse routeResponse = aiGatewayService.route(routeRequest);
-            long latencyMs = Duration.between(startedAt, Instant.now()).toMillis();
-            aiResponseLogRepository.save(new AiResponseLog(routeLog, 200, toMap(routeResponse), latencyMs));
-            log.info(
-                    "core_orchestrator_route queryUid={} traceId={} targetAgent={} intent={} confidence={} statusCode={} timeout=false latencyMs={} reason={}",
-                    query.getQueryUid(),
-                    routeRequest.traceId(),
-                    routeResponse.targetAgent(),
-                    routeResponse.intent(),
-                    routeResponse.confidence(),
-                    200,
-                    latencyMs,
-                    routeResponse.reason()
-            );
-            return new RouteResult(routeResponse, latencyMs);
-        } catch (RuntimeException exception) {
-            long latencyMs = Duration.between(startedAt, Instant.now()).toMillis();
-            int statusCode = statusCode(exception);
-            aiResponseLogRepository.save(new AiResponseLog(
-                    routeLog,
-                    statusCode,
-                    Map.of("error", exception.getClass().getSimpleName(), "message", safeMessage(exception)),
-                    latencyMs
-            ));
-            log.warn(
-                    "core_orchestrator_route queryUid={} traceId={} targetAgent={} statusCode={} timeout={} latencyMs={} error={}",
-                    query.getQueryUid(),
-                    routeRequest.traceId(),
-                    TargetAgent.FALLBACK.name(),
-                    statusCode,
-                    isTimeout(exception),
-                    latencyMs,
-                    exception.getClass().getSimpleName()
-            );
-            return new RouteResult(null, latencyMs);
-        }
-    }
-
-    private AgentResult callAgent(Query query, TargetAgent targetAgent, OrchestrateRequest orchestrateRequest) {
-        String endpoint = aiGatewayService.endpointFor(targetAgent);
-
+    private AgentResult callOrchestrator(Query query, OrchestrateRequest orchestrateRequest) {
         AiRequestLog aiRequestLog = aiRequestLogRepository.save(new AiRequestLog(
                 query,
                 orchestrateRequest.traceId(),
-                endpoint,
+                AiOrchestratorClient.ORCHESTRATOR_CHAT_ENDPOINT,
                 toMap(orchestrateRequest)
         ));
-
         Instant startedAt = Instant.now();
         try {
-            OrchestrateResponse aiResponse = aiGatewayService.chat(targetAgent, orchestrateRequest);
+            OrchestrateResponse aiResponse = aiGatewayService.orchestrateChat(orchestrateRequest);
             long latencyMs = Duration.between(startedAt, Instant.now()).toMillis();
             aiResponseLogRepository.save(new AiResponseLog(aiRequestLog, 200, toMap(aiResponse), latencyMs));
             log.info(
-                    "core_orchestrator_agent_call queryUid={} traceId={} targetAgent={} endpoint={} libraryChatCalled={} statusCode={} timeout=false latencyMs={}",
+                    "core_orchestrator_chat queryUid={} traceId={} targetAgent={} intent={} confidence={} fallbackUsed={} fallbackReason={} statusCode={} timeout=false latencyMs={}",
                     query.getQueryUid(),
                     orchestrateRequest.traceId(),
-                    targetAgent.name(),
-                    endpoint,
-                    targetAgent == TargetAgent.LIBRARY,
+                    aiResponse.targetAgent(),
+                    aiResponse.intent(),
+                    aiResponse.confidence(),
+                    aiResponse.fallbackUsed(),
+                    aiResponse.fallbackReason(),
                     200,
                     latencyMs
             );
@@ -263,12 +155,10 @@ public class QueryService {
                     latencyMs
             ));
             log.warn(
-                    "core_orchestrator_agent_call queryUid={} traceId={} targetAgent={} endpoint={} libraryChatCalled={} statusCode={} timeout={} latencyMs={} error={}",
+                    "core_orchestrator_chat queryUid={} traceId={} targetAgent={} statusCode={} timeout={} latencyMs={} error={}",
                     query.getQueryUid(),
                     orchestrateRequest.traceId(),
-                    targetAgent.name(),
-                    endpoint,
-                    targetAgent == TargetAgent.LIBRARY,
+                    TargetAgent.FALLBACK.name(),
                     statusCode,
                     isTimeout(exception),
                     latencyMs,
@@ -278,53 +168,27 @@ public class QueryService {
         }
     }
 
-    private void saveFallbackResult(
-            Query query,
-            UUID traceId,
-            Conversation conversation,
-            OrchestrateResponse fallbackResponse,
-            long latencyMs
-    ) {
-        queryRouteRepository.save(new QueryRoute(
-                query,
-                fallbackResponse.intent(),
-                fallbackResponse.targetAgent(),
-                fallbackResponse.confidence(),
-                true
-        ));
-        agentRunRepository.save(new AgentRun(query, TargetAgent.FALLBACK.name(), "FAILED"));
-        queryResponseRepository.save(new QueryResponse(
-                query,
-                fallbackResponse.answer(),
-                Map.of("sources", List.of()),
-                0,
-                fallbackResponse.confidence(),
-                fallbackResponse.fallbackReason()
-        ));
-        logResult(query, traceId, conversation, null, fallbackResponse, "FAILED", latencyMs);
-    }
-
     private void logResult(
             Query query,
             UUID traceId,
             Conversation conversation,
-            RouteResponse routeResponse,
             OrchestrateResponse response,
             String status,
             long latencyMs
     ) {
         log.info(
-                "core_orchestrator queryUid={} traceId={} conversationUid={} targetAgent={} intent={} status={} latencyMs={} fallbackUsed={} libraryChatCalled={} routeReason={}",
+                "core_orchestrator queryUid={} traceId={} conversationUid={} message={} targetAgent={} intent={} confidence={} status={} latencyMs={} fallbackUsed={} fallbackReason={}",
                 query.getQueryUid(),
                 traceId,
                 conversation.getConversationUid(),
+                query.getQueryText(),
                 response.targetAgent(),
                 response.intent(),
+                response.confidence(),
                 status,
                 latencyMs,
                 response.fallbackUsed(),
-                routeResponse != null && TargetAgent.LIBRARY.name().equalsIgnoreCase(routeResponse.targetAgent()),
-                routeResponse == null ? "-" : routeResponse.reason()
+                response.fallbackReason()
         );
     }
 
@@ -341,28 +205,7 @@ public class QueryService {
                 aiResponse.fallbackReason(),
                 aiResponse.searchKeyword(),
                 aiResponse.resultCount(),
-                aiResponse.matchedBooks(),
-                false,
-                null
-        );
-    }
-
-    private QueryCreateResponse documentInputRequiredResponse(Query query, UUID traceId, RouteResponse routeResponse) {
-        return new QueryCreateResponse(
-                query.getQueryUid(),
-                traceId,
-                TargetAgent.DOCUMENT_REVIEW.name(),
-                "DOCUMENT_REVIEW_REQUIRED",
-                "검토할 전자결재 문서 본문을 입력해주세요.",
-                List.of(),
-                routeResponse.confidence() == null ? BigDecimal.ZERO : routeResponse.confidence(),
-                false,
-                null,
-                null,
-                null,
-                null,
-                true,
-                "OFFICIAL_DOCUMENT"
+                aiResponse.matchedBooks()
         );
     }
 
@@ -395,9 +238,6 @@ public class QueryService {
     private Map<String, Object> toMap(Object value) {
         return objectMapper.convertValue(value, new TypeReference<>() {
         });
-    }
-
-    private record RouteResult(RouteResponse response, long latencyMs) {
     }
 
     private record AgentResult(OrchestrateResponse response, long latencyMs) {

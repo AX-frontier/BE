@@ -24,8 +24,6 @@ public record CoreQueryResponse(
         List<Map<String, Object>> formatNoticeItems,
         List<Map<String, Object>> extractedTables,
         Map<String, Object> revisedDocument,
-        String reviewMarkdown,
-        boolean requiresDocumentInput,
-        String documentInputType
+        String reviewMarkdown
 ) {
 }

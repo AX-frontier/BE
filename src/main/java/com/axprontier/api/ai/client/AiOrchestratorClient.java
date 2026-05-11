@@ -9,8 +9,11 @@ import com.axprontier.api.ai.dto.TargetAgent;
 public interface AiOrchestratorClient {
 
     String ROUTE_ENDPOINT = "/orchestrator/route";
+    String ORCHESTRATOR_CHAT_ENDPOINT = "/orchestrator/chat";
 
     RouteResponse route(RouteRequest request);
+
+    OrchestrateResponse orchestrateChat(OrchestrateRequest request);
 
     OrchestrateResponse chat(TargetAgent targetAgent, OrchestrateRequest request);
 
