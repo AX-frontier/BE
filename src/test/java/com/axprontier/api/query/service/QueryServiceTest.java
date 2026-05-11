@@ -133,6 +133,37 @@ class QueryServiceTest {
     }
 
     @Test
+    void returnsDocumentInputRequestWithoutCallingAgentWhenRouteTargetIsDocumentReview() {
+        UUID conversationUid = UUID.randomUUID();
+        Conversation conversation = new Conversation("문서검토");
+        QueryCreateRequest request = new QueryCreateRequest("전자결재 문서 검토해줘", "WEB");
+        RouteResponse routeResponse = documentReviewRouteResponse(conversation);
+
+        when(conversationService.getByUid(conversationUid)).thenReturn(conversation);
+        when(queryRepository.save(any(Query.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(queryRouteRepository.save(any(QueryRoute.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(agentRunRepository.save(any(AgentRun.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(queryResponseRepository.save(any(QueryResponse.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(aiRequestLogRepository.save(any(AiRequestLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(aiResponseLogRepository.save(any(AiResponseLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
+
+        QueryCreateResponse response = service.create(conversationUid, request);
+
+        assertThat(response.targetAgent()).isEqualTo("DOCUMENT_REVIEW");
+        assertThat(response.intent()).isEqualTo("DOCUMENT_REVIEW_REQUIRED");
+        assertThat(response.requiresDocumentInput()).isTrue();
+        assertThat(response.documentInputType()).isEqualTo("OFFICIAL_DOCUMENT");
+        verify(aiGatewayService, never()).chat(any(), any(OrchestrateRequest.class));
+        verify(aiGatewayService, never()).endpointFor(TargetAgent.DOCUMENT_REVIEW);
+
+        ArgumentCaptor<AgentRun> agentRunCaptor = ArgumentCaptor.forClass(AgentRun.class);
+        verify(agentRunRepository).save(agentRunCaptor.capture());
+        assertThat(ReflectionTestUtils.getField(agentRunCaptor.getValue(), "status"))
+                .isEqualTo("PENDING_DOCUMENT_INPUT");
+    }
+
+    @Test
     void skipsLibrarySearchLogWhenLibraryAgentReturnsFallback() {
         UUID conversationUid = UUID.randomUUID();
         Conversation conversation = new Conversation("도서관 질문");
@@ -243,6 +274,19 @@ class QueryServiceTest {
                 "클린 코드",
                 1,
                 List.of(sampleBook())
+        );
+    }
+
+    private RouteResponse documentReviewRouteResponse(Conversation conversation) {
+        return new RouteResponse(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                conversation.getConversationUid(),
+                "DOCUMENT_REVIEW",
+                "DOCUMENT_REVIEW",
+                BigDecimal.valueOf(0.86),
+                "matched document review keywords",
+                null
         );
     }
 
