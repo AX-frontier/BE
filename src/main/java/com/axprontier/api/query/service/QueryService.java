@@ -205,7 +205,8 @@ public class QueryService {
                 aiResponse.fallbackReason(),
                 aiResponse.searchKeyword(),
                 aiResponse.resultCount(),
-                aiResponse.matchedBooks()
+                aiResponse.matchedBooks(),
+                aiResponse.requiresDocumentInput()
         );
     }
 
