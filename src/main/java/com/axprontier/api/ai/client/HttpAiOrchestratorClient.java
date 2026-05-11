@@ -55,6 +55,15 @@ public class HttpAiOrchestratorClient implements AiOrchestratorClient {
     }
 
     @Override
+    public OrchestrateResponse orchestrateChat(OrchestrateRequest request) {
+        return restClient.post()
+                .uri(ORCHESTRATOR_CHAT_ENDPOINT)
+                .body(request)
+                .retrieve()
+                .body(OrchestrateResponse.class);
+    }
+
+    @Override
     public OrchestrateResponse chat(TargetAgent targetAgent, OrchestrateRequest request) {
         return restClient.post()
                 .uri(endpointFor(targetAgent))
