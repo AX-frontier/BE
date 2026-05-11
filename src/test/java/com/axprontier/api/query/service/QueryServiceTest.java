@@ -162,6 +162,44 @@ class QueryServiceTest {
         verify(librarySearchLogService).saveIfLibrarySearch(any(Query.class), eq(fallbackResponse));
     }
 
+    @Test
+    void returnsDocumentReviewGuideWithoutCallingAgentWhenGeneralChatRoutesToDocumentReview() {
+        UUID conversationUid = UUID.randomUUID();
+        Conversation conversation = new Conversation("문서 검토 질문");
+        QueryCreateRequest request = new QueryCreateRequest("전자결재 문서를 검토해줘", "WEB");
+        RouteResponse routeResponse = documentReviewRouteResponse(conversation);
+        OrchestrateResponse guideResponse = documentReviewGuideResponse(routeResponse);
+
+        when(conversationService.getByUid(conversationUid)).thenReturn(conversation);
+        when(queryRepository.save(any(Query.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(queryRouteRepository.save(any(QueryRoute.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(agentRunRepository.save(any(AgentRun.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(queryResponseRepository.save(any(QueryResponse.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(aiRequestLogRepository.save(any(AiRequestLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(aiResponseLogRepository.save(any(AiResponseLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
+        when(aiGatewayService.documentReviewGuideResponse(routeResponse.intent(), routeResponse.confidence()))
+                .thenReturn(guideResponse);
+
+        QueryCreateResponse response = service.create(conversationUid, request);
+
+        assertThat(response.targetAgent()).isEqualTo("DOCUMENT_REVIEW");
+        assertThat(response.answer()).isEqualTo(documentReviewGuideAnswer());
+        assertThat(response.sources()).isEmpty();
+        assertThat(response.fallbackUsed()).isFalse();
+        verify(aiGatewayService, never()).chat(eq(TargetAgent.DOCUMENT_REVIEW), any(OrchestrateRequest.class));
+
+        ArgumentCaptor<QueryResponse> queryResponseCaptor = ArgumentCaptor.forClass(QueryResponse.class);
+        org.mockito.Mockito.verify(queryResponseRepository).save(queryResponseCaptor.capture());
+        QueryResponse savedResponse = queryResponseCaptor.getValue();
+        assertThat(ReflectionTestUtils.getField(savedResponse, "answerText"))
+                .isEqualTo(documentReviewGuideAnswer());
+        assertThat(ReflectionTestUtils.getField(savedResponse, "sourceCount"))
+                .isEqualTo(0);
+        assertThat(ReflectionTestUtils.getField(savedResponse, "sourcesJson"))
+                .isEqualTo(Map.of("sources", List.of()));
+    }
+
     private RouteResponse routeResponse(Conversation conversation) {
         return new RouteResponse(
                 UUID.randomUUID(),
@@ -244,6 +282,45 @@ class QueryServiceTest {
                 1,
                 List.of(sampleBook())
         );
+    }
+
+    private RouteResponse documentReviewRouteResponse(Conversation conversation) {
+        return new RouteResponse(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                conversation.getConversationUid(),
+                "DOCUMENT_REVIEW",
+                "DOCUMENT_REVIEW",
+                BigDecimal.valueOf(0.88),
+                "document review classifier matched",
+                new RouteEvidence(
+                        BigDecimal.valueOf(0.1),
+                        BigDecimal.valueOf(0.2),
+                        BigDecimal.valueOf(0.88),
+                        "main reranked hits: none",
+                        "library",
+                        "document_review.routing classifier: review request"
+                )
+        );
+    }
+
+    private OrchestrateResponse documentReviewGuideResponse(RouteResponse routeResponse) {
+        return new OrchestrateResponse(
+                "DOCUMENT_REVIEW",
+                routeResponse.intent(),
+                documentReviewGuideAnswer(),
+                List.of(),
+                routeResponse.confidence(),
+                false,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    private String documentReviewGuideAnswer() {
+        return "문서 검토는 문서 검토 화면에서 문서를 첨부하거나 본문을 입력한 뒤 진행해주세요.";
     }
 
     private MatchedBookDto sampleBook() {

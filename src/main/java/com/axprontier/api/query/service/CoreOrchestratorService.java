@@ -74,6 +74,14 @@ public class CoreOrchestratorService {
             logResult(request, routeResponse, fallbackResponse, "COMPLETED", startedAt, false, 200, false);
             return toCoreResponse(fallbackResponse);
         }
+        if (targetAgent == TargetAgent.DOCUMENT_REVIEW) {
+            OrchestrateResponse guideResponse = aiGatewayService.documentReviewGuideResponse(
+                    routeResponse.intent(),
+                    routeResponse.confidence()
+            );
+            logResult(request, routeResponse, guideResponse, "COMPLETED", startedAt, false, 200, false);
+            return toCoreResponse(guideResponse);
+        }
 
         OrchestrateRequest orchestrateRequest = routeRequest.toOrchestrateRequest();
         try {

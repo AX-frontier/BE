@@ -53,6 +53,29 @@ public class AiGatewayService {
         );
     }
 
+    public OrchestrateResponse documentReviewGuideResponse(String intent, BigDecimal confidence) {
+        return new OrchestrateResponse(
+                TargetAgent.DOCUMENT_REVIEW.name(),
+                intent == null || intent.isBlank() ? TargetAgent.DOCUMENT_REVIEW.name() : intent,
+                "문서 검토는 문서 검토 화면에서 문서를 첨부하거나 본문을 입력한 뒤 진행해주세요.",
+                List.of(),
+                confidence,
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
     public String endpointFor(TargetAgent targetAgent) {
         return aiOrchestratorClient.endpointFor(targetAgent);
     }

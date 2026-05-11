@@ -73,7 +73,10 @@ class DocumentReviewServiceTest {
                 Map.of(
                         "title", "전자결재 문서",
                         "docType", "OFFICIAL_DOCUMENT",
-                        "bodyText", "본문"
+                        "bodyText", "본문",
+                        "bodyHtml", "<p>본문</p>",
+                        "editorJson", Map.of("type", "doc"),
+                        "attachmentNames", List.of("첨부1.pdf")
                 )
         );
         OrchestrateResponse aiResponse = documentReviewResponse();
@@ -99,7 +102,9 @@ class DocumentReviewServiceTest {
         var response = service.review(request);
 
         assertThat(response.targetAgent()).isEqualTo("DOCUMENT_REVIEW");
-        verify(aiGatewayService).chat(eq(TargetAgent.DOCUMENT_REVIEW), any(OrchestrateRequest.class));
+        ArgumentCaptor<OrchestrateRequest> aiRequestCaptor = ArgumentCaptor.forClass(OrchestrateRequest.class);
+        verify(aiGatewayService).chat(eq(TargetAgent.DOCUMENT_REVIEW), aiRequestCaptor.capture());
+        assertThat(aiRequestCaptor.getValue().document()).isEqualTo(request.document());
 
         ArgumentCaptor<ReviewRequest> requestCaptor = ArgumentCaptor.forClass(ReviewRequest.class);
         verify(reviewRequestRepository).save(requestCaptor.capture());

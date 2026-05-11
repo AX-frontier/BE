@@ -135,6 +135,23 @@ public class QueryService {
             logResult(query, traceId, conversation, routeResponse, fallbackResponse, "COMPLETED", routeResult.latencyMs());
             return toCreateResponse(query, traceId, fallbackResponse);
         }
+        if (targetAgent == TargetAgent.DOCUMENT_REVIEW) {
+            OrchestrateResponse guideResponse = aiGatewayService.documentReviewGuideResponse(
+                    routeResponse.intent(),
+                    routeResponse.confidence()
+            );
+            agentRunRepository.save(new AgentRun(query, TargetAgent.DOCUMENT_REVIEW.name(), "COMPLETED"));
+            queryResponseRepository.save(new QueryResponse(
+                    query,
+                    guideResponse.answer(),
+                    Map.of("sources", List.of()),
+                    0,
+                    guideResponse.confidence(),
+                    guideResponse.fallbackReason()
+            ));
+            logResult(query, traceId, conversation, routeResponse, guideResponse, "COMPLETED", routeResult.latencyMs());
+            return toCreateResponse(query, traceId, guideResponse);
+        }
 
         AgentResult agentResult = callAgent(query, targetAgent, orchestrateRequest);
         OrchestrateResponse aiResponse = agentResult.response();

@@ -58,6 +58,7 @@ class HttpAiOrchestratorClientTest {
                 .andExpect(jsonPath("$.traceId").value(traceId.toString()))
                 .andExpect(jsonPath("$.conversationUid").value(conversationUid.toString()))
                 .andExpect(jsonPath("$.message").value(message))
+                .andExpect(jsonPath("$.document").doesNotExist())
                 .andRespond(withSuccess(routeResponseJson(queryUid, traceId, conversationUid, targetAgent), MediaType.APPLICATION_JSON));
 
         server.expect(once(), requestTo("http://localhost:8000" + agentPath))
@@ -81,6 +82,17 @@ class HttpAiOrchestratorClientTest {
             assertThat(agentResponse.sources()).containsExactly(mainOfficialSource());
         }
         server.verify();
+    }
+
+    @Test
+    void endpointForDocumentReviewReturnsConfiguredPath() {
+        HttpAiOrchestratorClient client = new HttpAiOrchestratorClient(
+                RestClient.builder().baseUrl("http://localhost:8000").build(),
+                "/library/chat",
+                "/document-review/chat"
+        );
+
+        assertThat(client.endpointFor(TargetAgent.DOCUMENT_REVIEW)).isEqualTo("/document-review/chat");
     }
 
     private String routeResponseJson(UUID queryUid, UUID traceId, UUID conversationUid, String targetAgent) {
