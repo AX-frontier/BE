@@ -10,11 +10,7 @@ import static org.mockito.Mockito.when;
 import com.axprontier.api.ai.dto.MatchedBookDto;
 import com.axprontier.api.ai.dto.OrchestrateRequest;
 import com.axprontier.api.ai.dto.OrchestrateResponse;
-import com.axprontier.api.ai.dto.RouteEvidence;
-import com.axprontier.api.ai.dto.RouteRequest;
-import com.axprontier.api.ai.dto.RouteResponse;
 import com.axprontier.api.ai.dto.SourceDto;
-import com.axprontier.api.ai.dto.TargetAgent;
 import com.axprontier.api.ai.entity.AiRequestLog;
 import com.axprontier.api.ai.entity.AiResponseLog;
 import com.axprontier.api.ai.repository.AiRequestLogRepository;
@@ -68,156 +64,113 @@ class QueryServiceTest {
     );
 
     @Test
-    void storesOfficialLinkAnswerVerbatimAndPersistsOnlySourcesJsonFromAiResponse() {
+    void storesMainAnswerFromExecutableOrchestratorWithoutLegacyAgentCall() {
         UUID conversationUid = UUID.randomUUID();
         Conversation conversation = new Conversation("학사 공지");
         QueryCreateRequest request = new QueryCreateRequest("복수전공 신청 기간 알려줘", "WEB");
-        RouteResponse routeResponse = routeResponse(conversation);
         OrchestrateResponse mainResponse = mainResponse();
-
-        when(conversationService.getByUid(conversationUid)).thenReturn(conversation);
-        when(queryRepository.save(any(Query.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(queryRouteRepository.save(any(QueryRoute.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(agentRunRepository.save(any(AgentRun.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(queryResponseRepository.save(any(QueryResponse.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(aiRequestLogRepository.save(any(AiRequestLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(aiResponseLogRepository.save(any(AiResponseLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
-        when(aiGatewayService.endpointFor(TargetAgent.MAIN)).thenReturn("/main/chat");
-        when(aiGatewayService.chat(eq(TargetAgent.MAIN), any(OrchestrateRequest.class))).thenReturn(mainResponse);
+        arrangePersistence(conversationUid, conversation);
+        when(aiGatewayService.orchestrateChat(any(OrchestrateRequest.class))).thenReturn(mainResponse);
 
         QueryCreateResponse response = service.create(conversationUid, request);
 
         assertThat(response.targetAgent()).isEqualTo("MAIN");
         assertThat(response.answer()).isEqualTo(mainOfficialLinkAnswer());
         assertThat(response.sources()).containsExactly(mainOfficialSource());
+        verify(aiGatewayService, never()).chat(any(), any(OrchestrateRequest.class));
 
         ArgumentCaptor<QueryResponse> queryResponseCaptor = ArgumentCaptor.forClass(QueryResponse.class);
-        org.mockito.Mockito.verify(queryResponseRepository).save(queryResponseCaptor.capture());
+        verify(queryResponseRepository).save(queryResponseCaptor.capture());
         QueryResponse savedResponse = queryResponseCaptor.getValue();
-
-        assertThat(ReflectionTestUtils.getField(savedResponse, "answerText"))
-                .isEqualTo(mainOfficialLinkAnswer());
-        assertThat(ReflectionTestUtils.getField(savedResponse, "sourceCount"))
-                .isEqualTo(1);
+        assertThat(ReflectionTestUtils.getField(savedResponse, "answerText")).isEqualTo(mainOfficialLinkAnswer());
+        assertThat(ReflectionTestUtils.getField(savedResponse, "sourceCount")).isEqualTo(1);
         assertThat(ReflectionTestUtils.getField(savedResponse, "sourcesJson"))
                 .isEqualTo(Map.of("sources", List.of(mainOfficialSource())));
     }
 
     @Test
-    void savesLibrarySearchLogAndReturnsMatchedBooksWhenLibraryAgentResponds() {
+    void savesLibrarySearchLogWhenExecutableOrchestratorReturnsLibrary() {
         UUID conversationUid = UUID.randomUUID();
         Conversation conversation = new Conversation("도서관 질문");
-        QueryCreateRequest request = new QueryCreateRequest("클린 코드 책 찾아줘", "WEB");
-        RouteResponse routeResponse = libraryRouteResponse(conversation);
+        QueryCreateRequest request = new QueryCreateRequest("파이썬 책 어디 있어?", "WEB");
         OrchestrateResponse libraryResponse = libraryOrchestrateResponse();
-
-        when(conversationService.getByUid(conversationUid)).thenReturn(conversation);
-        when(queryRepository.save(any(Query.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(queryRouteRepository.save(any(QueryRoute.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(agentRunRepository.save(any(AgentRun.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(queryResponseRepository.save(any(QueryResponse.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(aiRequestLogRepository.save(any(AiRequestLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(aiResponseLogRepository.save(any(AiResponseLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
-        when(aiGatewayService.endpointFor(TargetAgent.LIBRARY)).thenReturn("/library/chat");
-        when(aiGatewayService.chat(eq(TargetAgent.LIBRARY), any(OrchestrateRequest.class))).thenReturn(libraryResponse);
+        arrangePersistence(conversationUid, conversation);
+        when(aiGatewayService.orchestrateChat(any(OrchestrateRequest.class))).thenReturn(libraryResponse);
 
         QueryCreateResponse response = service.create(conversationUid, request);
 
         assertThat(response.targetAgent()).isEqualTo("LIBRARY");
-        assertThat(response.searchKeyword()).isEqualTo("클린 코드");
+        assertThat(response.searchKeyword()).isEqualTo("파이썬");
         assertThat(response.resultCount()).isEqualTo(1);
         assertThat(response.matchedBooks()).containsExactly(sampleBook());
         verify(librarySearchLogService).saveIfLibrarySearch(any(Query.class), eq(libraryResponse));
+        verify(aiGatewayService, never()).chat(any(), any(OrchestrateRequest.class));
     }
 
     @Test
-    void skipsLibrarySearchLogWhenLibraryAgentReturnsFallback() {
-        UUID conversationUid = UUID.randomUUID();
-        Conversation conversation = new Conversation("도서관 질문");
-        QueryCreateRequest request = new QueryCreateRequest("파이썬 책 어디 있어?", "WEB");
-        RouteResponse routeResponse = libraryRouteResponse(conversation);
-        OrchestrateResponse fallbackResponse = new OrchestrateResponse(
-                "FALLBACK", "BOOK_SEARCH", "일시적인 오류가 발생했습니다.",
-                List.of(), BigDecimal.ZERO, true, "AGENT_CALL_FAILED", null, null, null
-        );
-
-        when(conversationService.getByUid(conversationUid)).thenReturn(conversation);
-        when(queryRepository.save(any(Query.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(queryRouteRepository.save(any(QueryRoute.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(agentRunRepository.save(any(AgentRun.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(queryResponseRepository.save(any(QueryResponse.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(aiRequestLogRepository.save(any(AiRequestLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(aiResponseLogRepository.save(any(AiResponseLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
-        when(aiGatewayService.endpointFor(TargetAgent.LIBRARY)).thenReturn("/library/chat");
-        when(aiGatewayService.chat(eq(TargetAgent.LIBRARY), any(OrchestrateRequest.class))).thenThrow(new RuntimeException("500 Internal Server Error"));
-        when(aiGatewayService.fallbackResponse(routeResponse.intent(), "AGENT_CALL_FAILED")).thenReturn(fallbackResponse);
-
-        QueryCreateResponse response = service.create(conversationUid, request);
-
-        assertThat(response.fallbackUsed()).isTrue();
-        assertThat(response.fallbackReason()).isEqualTo("AGENT_CALL_FAILED");
-        verify(librarySearchLogService).saveIfLibrarySearch(any(Query.class), eq(fallbackResponse));
-    }
-
-    @Test
-    void returnsDocumentReviewGuideWithoutCallingAgentWhenGeneralChatRoutesToDocumentReview() {
+    void forwardsDocumentDtoToExecutableOrchestratorAndStoresDocumentReviewResponse() {
         UUID conversationUid = UUID.randomUUID();
         Conversation conversation = new Conversation("문서 검토 질문");
-        QueryCreateRequest request = new QueryCreateRequest("전자결재 문서를 검토해줘", "WEB");
-        RouteResponse routeResponse = documentReviewRouteResponse(conversation);
-        OrchestrateResponse guideResponse = documentReviewGuideResponse(routeResponse);
-
-        when(conversationService.getByUid(conversationUid)).thenReturn(conversation);
-        when(queryRepository.save(any(Query.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(queryRouteRepository.save(any(QueryRoute.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(agentRunRepository.save(any(AgentRun.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(queryResponseRepository.save(any(QueryResponse.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(aiRequestLogRepository.save(any(AiRequestLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(aiResponseLogRepository.save(any(AiResponseLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
-        when(aiGatewayService.documentReviewGuideResponse(routeResponse.intent(), routeResponse.confidence()))
-                .thenReturn(guideResponse);
+        Map<String, Object> document = document("검토할 문서 본문");
+        QueryCreateRequest request = new QueryCreateRequest("기안할 문서가 있는데 검토해줄 수 있어?", "WEB", document);
+        OrchestrateResponse documentReviewResponse = documentReviewResponse();
+        arrangePersistence(conversationUid, conversation);
+        when(aiGatewayService.orchestrateChat(any(OrchestrateRequest.class))).thenReturn(documentReviewResponse);
 
         QueryCreateResponse response = service.create(conversationUid, request);
 
         assertThat(response.targetAgent()).isEqualTo("DOCUMENT_REVIEW");
-        assertThat(response.answer()).isEqualTo(documentReviewGuideAnswer());
-        assertThat(response.sources()).isEmpty();
+        assertThat(response.answer()).isEqualTo("문서 검토 결과입니다.");
         assertThat(response.fallbackUsed()).isFalse();
-        verify(aiGatewayService, never()).chat(eq(TargetAgent.DOCUMENT_REVIEW), any(OrchestrateRequest.class));
 
-        ArgumentCaptor<QueryResponse> queryResponseCaptor = ArgumentCaptor.forClass(QueryResponse.class);
-        org.mockito.Mockito.verify(queryResponseRepository).save(queryResponseCaptor.capture());
-        QueryResponse savedResponse = queryResponseCaptor.getValue();
-        assertThat(ReflectionTestUtils.getField(savedResponse, "answerText"))
-                .isEqualTo(documentReviewGuideAnswer());
-        assertThat(ReflectionTestUtils.getField(savedResponse, "sourceCount"))
-                .isEqualTo(0);
-        assertThat(ReflectionTestUtils.getField(savedResponse, "sourcesJson"))
-                .isEqualTo(Map.of("sources", List.of()));
+        ArgumentCaptor<OrchestrateRequest> aiRequestCaptor = ArgumentCaptor.forClass(OrchestrateRequest.class);
+        verify(aiGatewayService).orchestrateChat(aiRequestCaptor.capture());
+        assertThat(aiRequestCaptor.getValue().document()).isEqualTo(document);
+        verify(aiGatewayService, never()).chat(any(), any(OrchestrateRequest.class));
     }
 
-    private RouteResponse routeResponse(Conversation conversation) {
-        return new RouteResponse(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                conversation.getConversationUid(),
-                "MAIN",
-                "ACADEMIC_NOTICE",
-                BigDecimal.valueOf(0.84),
-                "route selected targetAgent from orchestrator",
-                new RouteEvidence(
-                        BigDecimal.valueOf(0.72),
-                        BigDecimal.valueOf(0.21),
-                        BigDecimal.ZERO,
-                        "main reranked hits: 2026학년도 1학기 복수·부전공 신청 및 변경신청 안내 (main-1, 0.720), 학사 공지 (main-2, 0.640)",
-                        "library",
-                        "document"
-                )
-        );
+    @Test
+    void returnsPythonFallbackResponseAsIs() {
+        UUID conversationUid = UUID.randomUUID();
+        Conversation conversation = new Conversation("일반 질문");
+        QueryCreateRequest request = new QueryCreateRequest("안녕", "WEB");
+        OrchestrateResponse fallbackResponse = fallbackResponse("LOW_CONFIDENCE");
+        arrangePersistence(conversationUid, conversation);
+        when(aiGatewayService.orchestrateChat(any(OrchestrateRequest.class))).thenReturn(fallbackResponse);
+
+        QueryCreateResponse response = service.create(conversationUid, request);
+
+        assertThat(response.targetAgent()).isEqualTo("FALLBACK");
+        assertThat(response.fallbackUsed()).isTrue();
+        assertThat(response.fallbackReason()).isEqualTo("LOW_CONFIDENCE");
+        verify(aiGatewayService, never()).fallbackResponse(any(), any());
+    }
+
+    @Test
+    void returnsSpringFallbackWhenExecutableOrchestratorFails() {
+        UUID conversationUid = UUID.randomUUID();
+        Conversation conversation = new Conversation("학사 공지");
+        QueryCreateRequest request = new QueryCreateRequest("복수전공 신청 기간 알려줘", "WEB");
+        OrchestrateResponse fallbackResponse = fallbackResponse("ORCHESTRATOR_CHAT_FAILED");
+        arrangePersistence(conversationUid, conversation);
+        when(aiGatewayService.orchestrateChat(any(OrchestrateRequest.class))).thenThrow(new RuntimeException("timeout"));
+        when(aiGatewayService.fallbackResponse("FALLBACK", "ORCHESTRATOR_CHAT_FAILED")).thenReturn(fallbackResponse);
+
+        QueryCreateResponse response = service.create(conversationUid, request);
+
+        assertThat(response.targetAgent()).isEqualTo("FALLBACK");
+        assertThat(response.fallbackUsed()).isTrue();
+        assertThat(response.fallbackReason()).isEqualTo("ORCHESTRATOR_CHAT_FAILED");
+    }
+
+    private void arrangePersistence(UUID conversationUid, Conversation conversation) {
+        when(conversationService.getByUid(conversationUid)).thenReturn(conversation);
+        when(queryRepository.save(any(Query.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(queryRouteRepository.save(any(QueryRoute.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(agentRunRepository.save(any(AgentRun.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(queryResponseRepository.save(any(QueryResponse.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(aiRequestLogRepository.save(any(AiRequestLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(aiResponseLogRepository.save(any(AiResponseLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     private OrchestrateResponse mainResponse() {
@@ -232,6 +185,62 @@ class QueryServiceTest {
                 null,
                 null,
                 null
+        );
+    }
+
+    private OrchestrateResponse libraryOrchestrateResponse() {
+        return new OrchestrateResponse(
+                "LIBRARY",
+                "BOOK_SEARCH",
+                "파이썬 도서 1건을 찾았습니다.",
+                List.of(new SourceDto(10L, "학술정보관", "https://library.example", "2026-05-10")),
+                BigDecimal.valueOf(0.92),
+                false,
+                null,
+                "파이썬",
+                1,
+                List.of(sampleBook())
+        );
+    }
+
+    private OrchestrateResponse documentReviewResponse() {
+        return new OrchestrateResponse(
+                "DOCUMENT_REVIEW",
+                "DOCUMENT_REVIEW",
+                "문서 검토 결과입니다.",
+                List.of(),
+                BigDecimal.valueOf(0.88),
+                false,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    private OrchestrateResponse fallbackResponse(String fallbackReason) {
+        return new OrchestrateResponse(
+                "FALLBACK",
+                "FALLBACK",
+                "질문을 처리하지 못했습니다.",
+                List.of(),
+                BigDecimal.ZERO,
+                true,
+                fallbackReason,
+                null,
+                null,
+                null
+        );
+    }
+
+    private Map<String, Object> document(String bodyText) {
+        return Map.of(
+                "title", "문서 제목",
+                "docType", "OFFICIAL_DOCUMENT",
+                "bodyText", bodyText,
+                "bodyHtml", "<p>" + bodyText + "</p>",
+                "editorJson", Map.of(),
+                "attachmentNames", List.of()
         );
     }
 
@@ -256,83 +265,16 @@ class QueryServiceTest {
         );
     }
 
-    private RouteResponse libraryRouteResponse(Conversation conversation) {
-        return new RouteResponse(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                conversation.getConversationUid(),
-                "LIBRARY",
-                "BOOK_SEARCH",
-                BigDecimal.valueOf(0.92),
-                "library reranked hits: 클린 코드 (lib-1, 0.920)",
-                null
-        );
-    }
-
-    private OrchestrateResponse libraryOrchestrateResponse() {
-        return new OrchestrateResponse(
-                "LIBRARY",
-                "BOOK_SEARCH",
-                "클린 코드 도서 1건을 찾았습니다.",
-                List.of(new SourceDto(10L, "학술정보관", "https://library.example", "2026-05-10")),
-                BigDecimal.valueOf(0.92),
-                false,
-                null,
-                "클린 코드",
-                1,
-                List.of(sampleBook())
-        );
-    }
-
-    private RouteResponse documentReviewRouteResponse(Conversation conversation) {
-        return new RouteResponse(
-                UUID.randomUUID(),
-                UUID.randomUUID(),
-                conversation.getConversationUid(),
-                "DOCUMENT_REVIEW",
-                "DOCUMENT_REVIEW",
-                BigDecimal.valueOf(0.88),
-                "document review classifier matched",
-                new RouteEvidence(
-                        BigDecimal.valueOf(0.1),
-                        BigDecimal.valueOf(0.2),
-                        BigDecimal.valueOf(0.88),
-                        "main reranked hits: none",
-                        "library",
-                        "document_review.routing classifier: review request"
-                )
-        );
-    }
-
-    private OrchestrateResponse documentReviewGuideResponse(RouteResponse routeResponse) {
-        return new OrchestrateResponse(
-                "DOCUMENT_REVIEW",
-                routeResponse.intent(),
-                documentReviewGuideAnswer(),
-                List.of(),
-                routeResponse.confidence(),
-                false,
-                null,
-                null,
-                null,
-                null
-        );
-    }
-
-    private String documentReviewGuideAnswer() {
-        return "문서 검토는 문서 검토 화면에서 문서를 첨부하거나 본문을 입력한 뒤 진행해주세요.";
-    }
-
     private MatchedBookDto sampleBook() {
         return new MatchedBookDto(
                 10L,
                 "BIB-1",
                 "REG-1",
-                "클린 코드",
-                "Robert C. Martin",
-                "인사이트",
-                2013,
-                "005.1 M381c",
+                "파이썬",
+                "홍길동",
+                "한성출판",
+                2024,
+                "005.133",
                 "단행본",
                 "MAIN",
                 "중앙도서관",

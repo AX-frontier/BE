@@ -8,11 +8,12 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.axprontier.api.ai.dto.OrchestrateRequest;
 import com.axprontier.api.ai.dto.OrchestrateResponse;
-import com.axprontier.api.ai.dto.RouteRequest;
-import com.axprontier.api.ai.dto.RouteResponse;
 import com.axprontier.api.ai.dto.SourceDto;
 import com.axprontier.api.ai.dto.TargetAgent;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -23,25 +24,12 @@ import org.springframework.web.client.RestClient;
 class HttpAiOrchestratorClientTest {
 
     @Test
-    void routesThenCallsMainAgentWithSameIds() {
-        assertRoutesThenCallsAgent("복수전공 신청 기간 알려줘", "MAIN", "/main/chat");
-    }
-
-    @Test
-    void routesThenCallsLibraryAgentWithSameIds() {
-        assertRoutesThenCallsAgent("파이썬 책 어디 있어?", "LIBRARY", "/library/chat");
-    }
-
-    @Test
-    void routesThenCallsDocumentReviewAgentWithSameIds() {
-        assertRoutesThenCallsAgent("이 공문 문장 검토해줘", "DOCUMENT_REVIEW", "/document-review/chat");
-    }
-
-    private void assertRoutesThenCallsAgent(String message, String targetAgent, String agentPath) {
+    void callsExecutableOrchestratorChatWithSameIds() {
         UUID queryUid = UUID.randomUUID();
         UUID traceId = UUID.randomUUID();
         UUID conversationUid = UUID.randomUUID();
-        RouteRequest request = new RouteRequest(queryUid, traceId, conversationUid, message);
+        String message = "복수전공 신청 기간 알려줘";
+        OrchestrateRequest request = new OrchestrateRequest(queryUid, traceId, conversationUid, message);
 
         RestClient.Builder builder = RestClient.builder().baseUrl("http://localhost:8000");
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -51,7 +39,7 @@ class HttpAiOrchestratorClientTest {
                 "/document-review/chat"
         );
 
-        server.expect(once(), requestTo("http://localhost:8000/orchestrator/route"))
+        server.expect(once(), requestTo("http://localhost:8000/orchestrator/chat"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.queryUid").value(queryUid.toString()))
@@ -59,33 +47,69 @@ class HttpAiOrchestratorClientTest {
                 .andExpect(jsonPath("$.conversationUid").value(conversationUid.toString()))
                 .andExpect(jsonPath("$.message").value(message))
                 .andExpect(jsonPath("$.document").doesNotExist())
-                .andRespond(withSuccess(routeResponseJson(queryUid, traceId, conversationUid, targetAgent), MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess(mainResponseJson(), MediaType.APPLICATION_JSON));
 
-        server.expect(once(), requestTo("http://localhost:8000" + agentPath))
+        OrchestrateResponse response = client.orchestrateChat(request);
+
+        assertThat(response.targetAgent()).isEqualTo("MAIN");
+        assertThat(response.answer()).isEqualTo(mainOfficialLinkAnswer());
+        assertThat(response.sources()).containsExactly(mainOfficialSource());
+        server.verify();
+    }
+
+    @Test
+    void forwardsDocumentToExecutableOrchestratorChat() {
+        UUID queryUid = UUID.randomUUID();
+        UUID traceId = UUID.randomUUID();
+        UUID conversationUid = UUID.randomUUID();
+        String message = "기안할 문서가 있는데 검토해줄 수 있어?";
+        OrchestrateRequest request = new OrchestrateRequest(
+                queryUid,
+                traceId,
+                conversationUid,
+                message,
+                Map.of(
+                        "title", "문서 제목",
+                        "docType", "OFFICIAL_DOCUMENT",
+                        "bodyText", "검토할 문서 본문",
+                        "bodyHtml", "<p>검토할 문서 본문</p>",
+                        "editorJson", Map.of(),
+                        "attachmentNames", List.of()
+                )
+        );
+
+        RestClient.Builder builder = RestClient.builder().baseUrl("http://localhost:8000");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        HttpAiOrchestratorClient client = new HttpAiOrchestratorClient(
+                builder.build(),
+                "/library/chat",
+                "/document-review/chat"
+        );
+
+        server.expect(once(), requestTo("http://localhost:8000/orchestrator/chat"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.queryUid").value(queryUid.toString()))
                 .andExpect(jsonPath("$.traceId").value(traceId.toString()))
                 .andExpect(jsonPath("$.conversationUid").value(conversationUid.toString()))
                 .andExpect(jsonPath("$.message").value(message))
-                .andRespond(withSuccess(agentResponseJson(targetAgent), MediaType.APPLICATION_JSON));
+                .andExpect(jsonPath("$.document.title").value("문서 제목"))
+                .andExpect(jsonPath("$.document.docType").value("OFFICIAL_DOCUMENT"))
+                .andExpect(jsonPath("$.document.bodyText").value("검토할 문서 본문"))
+                .andExpect(jsonPath("$.document.bodyHtml").value("<p>검토할 문서 본문</p>"))
+                .andExpect(jsonPath("$.document.editorJson").exists())
+                .andExpect(jsonPath("$.document.attachmentNames").isArray())
+                .andRespond(withSuccess(documentReviewResponseJson(), MediaType.APPLICATION_JSON));
 
-        RouteResponse routeResponse = client.route(request);
-        OrchestrateResponse agentResponse = client.chat(TargetAgent.from(routeResponse.targetAgent()), request.toOrchestrateRequest());
+        OrchestrateResponse response = client.orchestrateChat(request);
 
-        assertThat(routeResponse.targetAgent()).isEqualTo(targetAgent);
-        assertThat(routeResponse.evidence().mainReason())
-                .startsWith("main reranked hits:");
-        assertThat(agentResponse.targetAgent()).isEqualTo(targetAgent);
-        if ("MAIN".equals(targetAgent)) {
-            assertThat(agentResponse.answer()).isEqualTo(mainOfficialLinkAnswer());
-            assertThat(agentResponse.sources()).containsExactly(mainOfficialSource());
-        }
+        assertThat(response.targetAgent()).isEqualTo("DOCUMENT_REVIEW");
+        assertThat(response.answer()).isEqualTo("문서 검토 결과입니다.");
         server.verify();
     }
 
     @Test
-    void endpointForDocumentReviewReturnsConfiguredPath() {
+    void legacyEndpointForDocumentReviewReturnsConfiguredPath() {
         HttpAiOrchestratorClient client = new HttpAiOrchestratorClient(
                 RestClient.builder().baseUrl("http://localhost:8000").build(),
                 "/library/chat",
@@ -95,66 +119,39 @@ class HttpAiOrchestratorClientTest {
         assertThat(client.endpointFor(TargetAgent.DOCUMENT_REVIEW)).isEqualTo("/document-review/chat");
     }
 
-    private String routeResponseJson(UUID queryUid, UUID traceId, UUID conversationUid, String targetAgent) {
+    private String mainResponseJson() {
         return """
                 {
-                  "queryUid": "%s",
-                  "traceId": "%s",
-                  "conversationUid": "%s",
-                  "targetAgent": "%s",
-                  "intent": "TEST_INTENT",
-                  "confidence": 0.888,
-                  "reason": "test route",
-                  "evidence": {
-                    "mainScore": 0.888,
-                    "libraryScore": 0.4,
-                    "documentReviewScore": 0.0,
-                    "mainReason": "main reranked hits: 2026학년도 1학기 복수·부전공 신청 및 변경신청 안내 (main-1, 0.720), 학사 공지 (main-2, 0.640)",
-                    "libraryReason": "library",
-                    "documentReviewReason": "document"
-                  }
-                }
-                """.formatted(queryUid, traceId, conversationUid, targetAgent);
-    }
-
-    private String agentResponseJson(String targetAgent) {
-        if ("MAIN".equals(targetAgent)) {
-            return """
+                  "targetAgent": "MAIN",
+                  "intent": "ACADEMIC_NOTICE",
+                  "answer": %s,
+                  "sources": [
                     {
-                      "targetAgent": "MAIN",
-                      "intent": "ACADEMIC_NOTICE",
-                      "answer": %s,
-                      "sources": [
-                        {
-                          "id": 219610,
-                          "title": "2026학년도 1학기 복수·부전공 신청 및 변경신청 안내",
-                          "sourceUrl": "https://www.hansung.ac.kr/bbs/hansung/2127/219610/artclView.do",
-                          "updatedAt": "2026-05-08"
-                        }
-                      ],
-                      "confidence": 0.9,
-                      "fallbackUsed": false,
-                      "fallbackReason": null,
-                      "searchKeyword": null,
-                      "resultCount": null,
-                      "matchedBooks": null
+                      "id": 219610,
+                      "title": "2026학년도 1학기 복수·부전공 신청 및 변경신청 안내",
+                      "sourceUrl": "https://www.hansung.ac.kr/bbs/hansung/2127/219610/artclView.do",
+                      "updatedAt": "2026-05-08"
                     }
-                    """.formatted(jsonString(mainOfficialLinkAnswer()));
-        }
-        return """
-                {
-                  "targetAgent": "%s",
-                  "intent": "TEST_INTENT",
-                  "answer": "answer",
-                  "sources": [],
+                  ],
                   "confidence": 0.9,
                   "fallbackUsed": false,
-                  "fallbackReason": null,
-                  "searchKeyword": null,
-                  "resultCount": null,
-                  "matchedBooks": null
+                  "fallbackReason": null
                 }
-                """.formatted(targetAgent);
+                """.formatted(jsonString(mainOfficialLinkAnswer()));
+    }
+
+    private String documentReviewResponseJson() {
+        return """
+                {
+                  "targetAgent": "DOCUMENT_REVIEW",
+                  "intent": "DOCUMENT_REVIEW",
+                  "answer": "문서 검토 결과입니다.",
+                  "sources": [],
+                  "confidence": 0.88,
+                  "fallbackUsed": false,
+                  "fallbackReason": null
+                }
+                """;
     }
 
     private String mainOfficialLinkAnswer() {

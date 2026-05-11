@@ -2,8 +2,6 @@ package com.axprontier.api.query.service;
 
 import com.axprontier.api.ai.dto.OrchestrateRequest;
 import com.axprontier.api.ai.dto.OrchestrateResponse;
-import com.axprontier.api.ai.dto.RouteRequest;
-import com.axprontier.api.ai.dto.RouteResponse;
 import com.axprontier.api.ai.dto.TargetAgent;
 import com.axprontier.api.ai.service.AiGatewayService;
 import com.axprontier.api.query.dto.CoreQueryRequest;
@@ -29,113 +27,67 @@ public class CoreOrchestratorService {
 
     public CoreQueryResponse query(CoreQueryRequest request) {
         Instant startedAt = Instant.now();
-        RouteRequest routeRequest = new RouteRequest(
+        OrchestrateRequest orchestrateRequest = new OrchestrateRequest(
                 request.queryUid(),
                 request.traceId(),
                 request.conversationUid(),
-                request.message()
+                request.message(),
+                request.document()
         );
 
-        RouteResponse routeResponse;
         try {
-            routeResponse = aiGatewayService.route(routeRequest);
+            OrchestrateResponse response = aiGatewayService.orchestrateChat(orchestrateRequest);
             log.info(
-                    "core_orchestrator_route traceId={} targetAgent={} intent={} confidence={} statusCode={} timeout=false reason={}",
+                    "core_orchestrator_chat traceId={} targetAgent={} intent={} confidence={} fallbackUsed={} fallbackReason={} statusCode={} timeout=false",
                     request.traceId(),
-                    routeResponse.targetAgent(),
-                    routeResponse.intent(),
-                    routeResponse.confidence(),
-                    200,
-                    routeResponse.reason()
+                    response.targetAgent(),
+                    response.intent(),
+                    response.confidence(),
+                    response.fallbackUsed(),
+                    response.fallbackReason(),
+                    200
             );
+            logResult(request, response, "COMPLETED", startedAt, 200, false);
+            return toCoreResponse(response);
         } catch (RuntimeException exception) {
-            OrchestrateResponse fallbackResponse = aiGatewayService.fallbackResponse("FALLBACK", "ROUTE_FAILED");
+            OrchestrateResponse fallbackResponse = aiGatewayService.fallbackResponse("FALLBACK", "ORCHESTRATOR_CHAT_FAILED");
             log.warn(
-                    "core_orchestrator_route traceId={} targetAgent={} statusCode={} timeout={} error={}",
+                    "core_orchestrator_chat traceId={} targetAgent={} statusCode={} timeout={} error={}",
                     request.traceId(),
                     TargetAgent.FALLBACK.name(),
                     statusCode(exception),
                     isTimeout(exception),
                     exception.getClass().getSimpleName()
             );
-            logResult(request, null, fallbackResponse, "FAILED", startedAt, false, statusCode(exception), isTimeout(exception));
-            return toCoreResponse(fallbackResponse);
-        }
-
-        TargetAgent targetAgent = TargetAgent.from(routeResponse.targetAgent());
-        log.info(
-                "core_orchestrator_agent_selected traceId={} finalAgent={} libraryChatCalled={}",
-                request.traceId(),
-                targetAgent.name(),
-                targetAgent == TargetAgent.LIBRARY
-        );
-        if (targetAgent == TargetAgent.FALLBACK) {
-            OrchestrateResponse fallbackResponse = aiGatewayService.fallbackResponse(routeResponse.intent(), "ROUTE_TARGET_FALLBACK");
-            logResult(request, routeResponse, fallbackResponse, "COMPLETED", startedAt, false, 200, false);
-            return toCoreResponse(fallbackResponse);
-        }
-        if (targetAgent == TargetAgent.DOCUMENT_REVIEW) {
-            OrchestrateResponse guideResponse = aiGatewayService.documentReviewGuideResponse(
-                    routeResponse.intent(),
-                    routeResponse.confidence()
-            );
-            logResult(request, routeResponse, guideResponse, "COMPLETED", startedAt, false, 200, false);
-            return toCoreResponse(guideResponse);
-        }
-
-        OrchestrateRequest orchestrateRequest = routeRequest.toOrchestrateRequest();
-        try {
-            OrchestrateResponse response = aiGatewayService.chat(targetAgent, orchestrateRequest);
-            log.info(
-                    "core_orchestrator_agent_call traceId={} targetAgent={} libraryChatCalled={} statusCode={} timeout=false",
-                    request.traceId(),
-                    targetAgent.name(),
-                    targetAgent == TargetAgent.LIBRARY,
-                    200
-            );
-            logResult(request, routeResponse, response, "COMPLETED", startedAt, targetAgent == TargetAgent.LIBRARY, 200, false);
-            return toCoreResponse(response);
-        } catch (RuntimeException exception) {
-            OrchestrateResponse fallbackResponse = aiGatewayService.fallbackResponse(routeResponse.intent(), "AGENT_CALL_FAILED");
-            log.warn(
-                    "core_orchestrator_agent_call traceId={} targetAgent={} libraryChatCalled={} statusCode={} timeout={} error={}",
-                    request.traceId(),
-                    targetAgent.name(),
-                    targetAgent == TargetAgent.LIBRARY,
-                    statusCode(exception),
-                    isTimeout(exception),
-                    exception.getClass().getSimpleName()
-            );
-            logResult(request, routeResponse, fallbackResponse, "FAILED", startedAt, targetAgent == TargetAgent.LIBRARY, statusCode(exception), isTimeout(exception));
+            logResult(request, fallbackResponse, "FAILED", startedAt, statusCode(exception), isTimeout(exception));
             return toCoreResponse(fallbackResponse);
         }
     }
 
     private void logResult(
             CoreQueryRequest request,
-            RouteResponse routeResponse,
             OrchestrateResponse response,
             String status,
             Instant startedAt,
-            boolean libraryChatCalled,
             int statusCode,
             boolean timeout
     ) {
         long latencyMs = Duration.between(startedAt, Instant.now()).toMillis();
         log.info(
-                "core_orchestrator queryUid={} traceId={} conversationUid={} targetAgent={} intent={} status={} latencyMs={} fallbackUsed={} libraryChatCalled={} statusCode={} timeout={} routeReason={}",
+                "core_orchestrator queryUid={} traceId={} conversationUid={} message={} targetAgent={} intent={} confidence={} status={} latencyMs={} fallbackUsed={} fallbackReason={} statusCode={} timeout={}",
                 request.queryUid(),
                 request.traceId(),
                 request.conversationUid(),
+                request.message(),
                 response.targetAgent(),
                 response.intent(),
+                response.confidence(),
                 status,
                 latencyMs,
                 response.fallbackUsed(),
-                libraryChatCalled,
+                response.fallbackReason(),
                 statusCode,
-                timeout,
-                routeResponse == null ? "-" : routeResponse.reason()
+                timeout
         );
     }
 

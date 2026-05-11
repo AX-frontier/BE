@@ -2,7 +2,6 @@ package com.axprontier.api.query.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -10,8 +9,6 @@ import static org.mockito.Mockito.when;
 import com.axprontier.api.ai.dto.MatchedBookDto;
 import com.axprontier.api.ai.dto.OrchestrateRequest;
 import com.axprontier.api.ai.dto.OrchestrateResponse;
-import com.axprontier.api.ai.dto.RouteRequest;
-import com.axprontier.api.ai.dto.RouteResponse;
 import com.axprontier.api.ai.dto.SourceDto;
 import com.axprontier.api.ai.dto.TargetAgent;
 import com.axprontier.api.ai.service.AiGatewayService;
@@ -19,6 +16,7 @@ import com.axprontier.api.query.dto.CoreQueryRequest;
 import com.axprontier.api.query.dto.CoreQueryResponse;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,68 +28,12 @@ class CoreOrchestratorServiceTest {
     private final CoreOrchestratorService service = new CoreOrchestratorService(aiGatewayService);
 
     @Test
-    @DisplayName("route targetAgent가 LIBRARY이면 /library/chat 대상 에이전트 호출로 이어지고 응답 필드가 보존된다")
-    void callsLibraryAgentAndPreservesLibraryFieldsWhenRouteTargetIsLibrary() {
-        CoreQueryRequest request = request("오늘 도서관 몇 시까지 열어요?");
-        RouteResponse routeResponse = routeResponse(request, "LIBRARY");
-        OrchestrateResponse libraryResponse = libraryResponse();
-
-        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
-        when(aiGatewayService.chat(eq(TargetAgent.LIBRARY), any(OrchestrateRequest.class))).thenReturn(libraryResponse);
-
-        CoreQueryResponse response = service.query(request);
-
-        assertThat(response.targetAgent()).isEqualTo("LIBRARY");
-        assertThat(response.answer()).isEqualTo("오늘 도서관은 오후 9시까지 운영합니다.");
-        assertThat(response.sources()).containsExactly(new SourceDto(1L, "도서관 운영시간", "https://library.example/hours", "2026-05-08"));
-        assertThat(response.confidence()).isEqualByComparingTo("0.91");
-        assertThat(response.fallbackUsed()).isFalse();
-        assertThat(response.fallbackReason()).isNull();
-        assertThat(response.searchKeyword()).isEqualTo("도서관 운영시간");
-        assertThat(response.resultCount()).isEqualTo(1);
-        assertThat(response.matchedBooks()).containsExactly(new MatchedBookDto(
-                10L,
-                "BIB-10",
-                "REG-10",
-                "Effective Java",
-                "Joshua Bloch",
-                "Addison-Wesley",
-                2018,
-                "005.133 B651e",
-                "BOOK",
-                "LIB",
-                "3층 자료실",
-                "A-12"
-        ));
-
-        ArgumentCaptor<OrchestrateRequest> requestCaptor = ArgumentCaptor.forClass(OrchestrateRequest.class);
-        verify(aiGatewayService).chat(eq(TargetAgent.LIBRARY), requestCaptor.capture());
-        assertThat(requestCaptor.getValue().queryUid()).isEqualTo(request.queryUid());
-        assertThat(requestCaptor.getValue().traceId()).isEqualTo(request.traceId());
-        assertThat(requestCaptor.getValue().conversationUid()).isEqualTo(request.conversationUid());
-        assertThat(requestCaptor.getValue().message()).isEqualTo(request.message());
-    }
-
-    @Test
-    @DisplayName("route targetAgent가 MAIN이면 Library Agent를 호출하지 않는다")
-    void callsMainAgentAndDoesNotCallLibraryAgentWhenRouteTargetIsMain() {
+    @DisplayName("복수전공 질의는 /orchestrator/chat MAIN 응답을 그대로 반환한다")
+    void returnsMainResponseFromExecutableOrchestrator() {
         CoreQueryRequest request = request("복수전공 신청 기간 알려줘");
-        RouteResponse routeResponse = routeResponse(request, "MAIN");
-        OrchestrateResponse mainResponse = new OrchestrateResponse(
-                "MAIN",
-                "ACADEMIC_CALENDAR",
-                mainOfficialLinkAnswer(),
-                List.of(mainOfficialSource()),
-                BigDecimal.valueOf(0.84),
-                false,
-                null,
-                null,
-                null,
-                null
-        );
+        OrchestrateResponse mainResponse = mainResponse();
 
-        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
-        when(aiGatewayService.chat(eq(TargetAgent.MAIN), any(OrchestrateRequest.class))).thenReturn(mainResponse);
+        when(aiGatewayService.orchestrateChat(any(OrchestrateRequest.class))).thenReturn(mainResponse);
 
         CoreQueryResponse response = service.query(request);
 
@@ -99,96 +41,132 @@ class CoreOrchestratorServiceTest {
         assertThat(response.answer()).isEqualTo(mainOfficialLinkAnswer());
         assertThat(response.sources()).containsExactly(mainOfficialSource());
         assertThat(response.fallbackUsed()).isFalse();
-        verify(aiGatewayService).chat(eq(TargetAgent.MAIN), any(OrchestrateRequest.class));
-        verify(aiGatewayService, never()).chat(eq(TargetAgent.LIBRARY), any(OrchestrateRequest.class));
+        verify(aiGatewayService, never()).chat(any(), any(OrchestrateRequest.class));
     }
 
     @Test
-    @DisplayName("route targetAgent가 DOCUMENT_REVIEW이면 일반 채팅에서 문서검토 Agent를 바로 호출하지 않고 안내 응답을 반환한다")
-    void returnsGuideResponseWithoutCallingDocumentReviewAgentWhenRouteTargetIsDocumentReview() {
-        CoreQueryRequest request = request("전자결재 문서를 검토해줘");
-        RouteResponse routeResponse = routeResponse(request, "DOCUMENT_REVIEW");
-        OrchestrateResponse guideResponse = documentReviewGuideResponse(routeResponse);
+    @DisplayName("도서 질의는 /orchestrator/chat LIBRARY 응답을 그대로 반환한다")
+    void returnsLibraryResponseFromExecutableOrchestrator() {
+        CoreQueryRequest request = request("파이썬 책 어디 있어?");
+        OrchestrateResponse libraryResponse = libraryResponse();
 
-        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
-        when(aiGatewayService.documentReviewGuideResponse(routeResponse.intent(), routeResponse.confidence()))
-                .thenReturn(guideResponse);
+        when(aiGatewayService.orchestrateChat(any(OrchestrateRequest.class))).thenReturn(libraryResponse);
+
+        CoreQueryResponse response = service.query(request);
+
+        assertThat(response.targetAgent()).isEqualTo("LIBRARY");
+        assertThat(response.searchKeyword()).isEqualTo("파이썬");
+        assertThat(response.resultCount()).isEqualTo(1);
+        assertThat(response.matchedBooks()).containsExactly(sampleBook());
+        verify(aiGatewayService, never()).chat(any(), any(OrchestrateRequest.class));
+    }
+
+    @Test
+    @DisplayName("문서 bodyText가 있으면 document DTO를 포함해 /orchestrator/chat으로 전달한다")
+    void forwardsDocumentToExecutableOrchestrator() {
+        Map<String, Object> document = document("검토할 본문입니다.");
+        CoreQueryRequest request = request("기안할 문서가 있는데 검토해줄 수 있어?", document);
+        OrchestrateResponse documentReviewResponse = documentReviewResponse();
+
+        when(aiGatewayService.orchestrateChat(any(OrchestrateRequest.class))).thenReturn(documentReviewResponse);
 
         CoreQueryResponse response = service.query(request);
 
         assertThat(response.targetAgent()).isEqualTo("DOCUMENT_REVIEW");
-        assertThat(response.intent()).isEqualTo("TEST_INTENT");
-        assertThat(response.answer()).isEqualTo(documentReviewGuideAnswer());
-        assertThat(response.sources()).isEmpty();
-        assertThat(response.fallbackUsed()).isFalse();
-        assertThat(response.fallbackReason()).isNull();
-        verify(aiGatewayService, never()).chat(eq(TargetAgent.DOCUMENT_REVIEW), any(OrchestrateRequest.class));
-    }
+        assertThat(response.answer()).isEqualTo("문서 검토 결과입니다.");
 
-    @Test
-    @DisplayName("Python Library Agent timeout/500 등 호출 실패 시 fallback 응답을 반환한다")
-    void returnsFallbackWhenLibraryAgentCallFails() {
-        CoreQueryRequest request = request("파이썬 책 어디 있어?");
-        RouteResponse routeResponse = routeResponse(request, "LIBRARY");
-        OrchestrateResponse fallbackResponse = fallbackResponse("AGENT_CALL_FAILED");
-
-        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
-        when(aiGatewayService.chat(eq(TargetAgent.LIBRARY), any(OrchestrateRequest.class))).thenThrow(new RuntimeException("500"));
-        when(aiGatewayService.fallbackResponse(routeResponse.intent(), "AGENT_CALL_FAILED")).thenReturn(fallbackResponse);
-
-        CoreQueryResponse response = service.query(request);
-
-        assertThat(response.targetAgent()).isEqualTo("FALLBACK");
-        assertThat(response.fallbackUsed()).isTrue();
-        assertThat(response.fallbackReason()).isEqualTo("AGENT_CALL_FAILED");
-    }
-
-    @Test
-    void returnsFallbackWithoutAgentCallWhenRouteTargetIsFallback() {
-        CoreQueryRequest request = request("안녕");
-        RouteResponse routeResponse = routeResponse(request, "FALLBACK");
-        OrchestrateResponse fallbackResponse = fallbackResponse("ROUTE_TARGET_FALLBACK");
-
-        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
-        when(aiGatewayService.fallbackResponse(routeResponse.intent(), "ROUTE_TARGET_FALLBACK")).thenReturn(fallbackResponse);
-
-        CoreQueryResponse response = service.query(request);
-
-        assertThat(response.targetAgent()).isEqualTo("FALLBACK");
-        assertThat(response.fallbackUsed()).isTrue();
-        assertThat(response.fallbackReason()).isEqualTo("ROUTE_TARGET_FALLBACK");
+        ArgumentCaptor<OrchestrateRequest> requestCaptor = ArgumentCaptor.forClass(OrchestrateRequest.class);
+        verify(aiGatewayService).orchestrateChat(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().queryUid()).isEqualTo(request.queryUid());
+        assertThat(requestCaptor.getValue().traceId()).isEqualTo(request.traceId());
+        assertThat(requestCaptor.getValue().conversationUid()).isEqualTo(request.conversationUid());
+        assertThat(requestCaptor.getValue().message()).isEqualTo(request.message());
+        assertThat(requestCaptor.getValue().document()).isEqualTo(document);
         verify(aiGatewayService, never()).chat(any(), any(OrchestrateRequest.class));
     }
 
     @Test
-    void returnsFallbackWithoutAgentCallWhenRouteFails() {
-        CoreQueryRequest request = request("복수전공 신청 기간 알려줘");
-        OrchestrateResponse fallbackResponse = fallbackResponse("ROUTE_FAILED");
+    @DisplayName("문서검토 질의에 document가 없으면 Python FALLBACK 응답을 그대로 반환한다")
+    void returnsPythonFallbackWhenDocumentIsMissing() {
+        CoreQueryRequest request = request("기안할 문서가 있는데 검토해줄 수 있어?");
+        OrchestrateResponse fallbackResponse = fallbackResponse("DOCUMENT_BODY_REQUIRED");
 
-        when(aiGatewayService.route(any(RouteRequest.class))).thenThrow(new RuntimeException("timeout"));
-        when(aiGatewayService.fallbackResponse("FALLBACK", "ROUTE_FAILED")).thenReturn(fallbackResponse);
+        when(aiGatewayService.orchestrateChat(any(OrchestrateRequest.class))).thenReturn(fallbackResponse);
 
         CoreQueryResponse response = service.query(request);
 
         assertThat(response.targetAgent()).isEqualTo("FALLBACK");
         assertThat(response.fallbackUsed()).isTrue();
-        assertThat(response.fallbackReason()).isEqualTo("ROUTE_FAILED");
+        assertThat(response.fallbackReason()).isEqualTo("DOCUMENT_BODY_REQUIRED");
+        verify(aiGatewayService, never()).chat(any(), any(OrchestrateRequest.class));
+    }
+
+    @Test
+    @DisplayName("인사말은 Python FALLBACK 응답을 그대로 반환한다")
+    void returnsPythonFallbackForGreeting() {
+        CoreQueryRequest request = request("안녕");
+        OrchestrateResponse fallbackResponse = fallbackResponse("LOW_CONFIDENCE");
+
+        when(aiGatewayService.orchestrateChat(any(OrchestrateRequest.class))).thenReturn(fallbackResponse);
+
+        CoreQueryResponse response = service.query(request);
+
+        assertThat(response.targetAgent()).isEqualTo("FALLBACK");
+        assertThat(response.fallbackUsed()).isTrue();
+        assertThat(response.fallbackReason()).isEqualTo("LOW_CONFIDENCE");
+    }
+
+    @Test
+    @DisplayName("Python /orchestrator/chat 장애 시 Spring 내부 fallback 응답을 반환한다")
+    void returnsSpringFallbackWhenExecutableOrchestratorFails() {
+        CoreQueryRequest request = request("복수전공 신청 기간 알려줘");
+        OrchestrateResponse fallbackResponse = fallbackResponse("ORCHESTRATOR_CHAT_FAILED");
+
+        when(aiGatewayService.orchestrateChat(any(OrchestrateRequest.class))).thenThrow(new RuntimeException("timeout"));
+        when(aiGatewayService.fallbackResponse("FALLBACK", "ORCHESTRATOR_CHAT_FAILED")).thenReturn(fallbackResponse);
+
+        CoreQueryResponse response = service.query(request);
+
+        assertThat(response.targetAgent()).isEqualTo("FALLBACK");
+        assertThat(response.fallbackUsed()).isTrue();
+        assertThat(response.fallbackReason()).isEqualTo("ORCHESTRATOR_CHAT_FAILED");
         verify(aiGatewayService, never()).chat(any(), any(OrchestrateRequest.class));
     }
 
     private CoreQueryRequest request(String message) {
-        return new CoreQueryRequest(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "user-1", message);
+        return request(message, null);
     }
 
-    private RouteResponse routeResponse(CoreQueryRequest request, String targetAgent) {
-        return new RouteResponse(
-                request.queryUid(),
-                request.traceId(),
-                request.conversationUid(),
-                targetAgent,
-                "TEST_INTENT",
-                BigDecimal.valueOf(0.8),
-                "test",
+    private CoreQueryRequest request(String message, Map<String, Object> document) {
+        return new CoreQueryRequest(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "user-1", message, document);
+    }
+
+    private OrchestrateResponse mainResponse() {
+        return new OrchestrateResponse(
+                "MAIN",
+                "ACADEMIC_NOTICE",
+                mainOfficialLinkAnswer(),
+                List.of(mainOfficialSource()),
+                BigDecimal.valueOf(0.9),
+                false,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    private OrchestrateResponse documentReviewResponse() {
+        return new OrchestrateResponse(
+                "DOCUMENT_REVIEW",
+                "DOCUMENT_REVIEW",
+                "문서 검토 결과입니다.",
+                List.of(),
+                BigDecimal.valueOf(0.88),
+                false,
+                null,
+                null,
+                null,
                 null
         );
     }
@@ -208,50 +186,46 @@ class CoreOrchestratorServiceTest {
         );
     }
 
-    private OrchestrateResponse documentReviewGuideResponse(RouteResponse routeResponse) {
-        return new OrchestrateResponse(
-                "DOCUMENT_REVIEW",
-                routeResponse.intent(),
-                documentReviewGuideAnswer(),
-                List.of(),
-                routeResponse.confidence(),
-                false,
-                null,
-                null,
-                null,
-                null
-        );
-    }
-
-    private String documentReviewGuideAnswer() {
-        return "문서 검토는 문서 검토 화면에서 문서를 첨부하거나 본문을 입력한 뒤 진행해주세요.";
-    }
-
     private OrchestrateResponse libraryResponse() {
         return new OrchestrateResponse(
                 "LIBRARY",
-                "LIBRARY_HOURS",
-                "오늘 도서관은 오후 9시까지 운영합니다.",
-                List.of(new SourceDto(1L, "도서관 운영시간", "https://library.example/hours", "2026-05-08")),
+                "BOOK_SEARCH",
+                "파이썬 도서 1건을 찾았습니다.",
+                List.of(),
                 BigDecimal.valueOf(0.91),
                 false,
                 null,
-                "도서관 운영시간",
+                "파이썬",
                 1,
-                List.of(new MatchedBookDto(
-                        10L,
-                        "BIB-10",
-                        "REG-10",
-                        "Effective Java",
-                        "Joshua Bloch",
-                        "Addison-Wesley",
-                        2018,
-                        "005.133 B651e",
-                        "BOOK",
-                        "LIB",
-                        "3층 자료실",
-                        "A-12"
-                ))
+                List.of(sampleBook())
+        );
+    }
+
+    private MatchedBookDto sampleBook() {
+        return new MatchedBookDto(
+                10L,
+                "BIB-10",
+                "REG-10",
+                "파이썬",
+                "홍길동",
+                "한성출판",
+                2024,
+                "005.133",
+                "BOOK",
+                "LIB",
+                "3층 자료실",
+                "A-12"
+        );
+    }
+
+    private Map<String, Object> document(String bodyText) {
+        return Map.of(
+                "title", "문서 제목",
+                "docType", "OFFICIAL_DOCUMENT",
+                "bodyText", bodyText,
+                "bodyHtml", "<p>" + bodyText + "</p>",
+                "editorJson", Map.of(),
+                "attachmentNames", List.of()
         );
     }
 

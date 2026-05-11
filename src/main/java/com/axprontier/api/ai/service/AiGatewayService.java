@@ -23,6 +23,10 @@ public class AiGatewayService {
         return aiOrchestratorClient.route(request);
     }
 
+    public OrchestrateResponse orchestrateChat(OrchestrateRequest request) {
+        return aiOrchestratorClient.orchestrateChat(request);
+    }
+
     public OrchestrateResponse chat(TargetAgent targetAgent, OrchestrateRequest request) {
         if (targetAgent == TargetAgent.FALLBACK) {
             return fallbackResponse("FALLBACK", "NO_TARGET_AGENT");
@@ -39,29 +43,6 @@ public class AiGatewayService {
                 BigDecimal.ZERO,
                 true,
                 fallbackReason,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null
-        );
-    }
-
-    public OrchestrateResponse documentReviewGuideResponse(String intent, BigDecimal confidence) {
-        return new OrchestrateResponse(
-                TargetAgent.DOCUMENT_REVIEW.name(),
-                intent == null || intent.isBlank() ? TargetAgent.DOCUMENT_REVIEW.name() : intent,
-                "문서 검토는 문서 검토 화면에서 문서를 첨부하거나 본문을 입력한 뒤 진행해주세요.",
-                List.of(),
-                confidence,
-                false,
-                null,
                 null,
                 null,
                 null,
