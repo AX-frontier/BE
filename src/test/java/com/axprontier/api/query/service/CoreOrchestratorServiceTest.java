@@ -104,6 +104,23 @@ class CoreOrchestratorServiceTest {
     }
 
     @Test
+    @DisplayName("route targetAgent가 DOCUMENT_REVIEW이면 문서 본문 입력 요청만 반환하고 Agent를 호출하지 않는다")
+    void returnsDocumentInputRequestWithoutAgentCallWhenRouteTargetIsDocumentReview() {
+        CoreQueryRequest request = request("전자결재 문서 검토해줘");
+        RouteResponse routeResponse = routeResponse(request, "DOCUMENT_REVIEW");
+
+        when(aiGatewayService.route(any(RouteRequest.class))).thenReturn(routeResponse);
+
+        CoreQueryResponse response = service.query(request);
+
+        assertThat(response.targetAgent()).isEqualTo("DOCUMENT_REVIEW");
+        assertThat(response.intent()).isEqualTo("DOCUMENT_REVIEW_REQUIRED");
+        assertThat(response.requiresDocumentInput()).isTrue();
+        assertThat(response.documentInputType()).isEqualTo("OFFICIAL_DOCUMENT");
+        verify(aiGatewayService, never()).chat(any(), any(OrchestrateRequest.class));
+    }
+
+    @Test
     @DisplayName("Python Library Agent timeout/500 등 호출 실패 시 fallback 응답을 반환한다")
     void returnsFallbackWhenLibraryAgentCallFails() {
         CoreQueryRequest request = request("파이썬 책 어디 있어?");
