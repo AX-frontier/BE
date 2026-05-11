@@ -18,6 +18,8 @@ public record QueryCreateResponse(
         String fallbackReason,
         String searchKeyword,
         Integer resultCount,
-        List<MatchedBookDto> matchedBooks
+        List<MatchedBookDto> matchedBooks,
+        boolean requiresDocumentInput,
+        String documentInputType
 ) {
 }
