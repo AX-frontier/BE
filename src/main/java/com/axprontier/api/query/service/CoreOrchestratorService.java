@@ -8,11 +8,13 @@ import com.axprontier.api.query.dto.CoreQueryRequest;
 import com.axprontier.api.query.dto.CoreQueryResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Service
 public class CoreOrchestratorService {
@@ -61,6 +63,27 @@ public class CoreOrchestratorService {
             );
             logResult(request, fallbackResponse, "FAILED", startedAt, statusCode(exception), isTimeout(exception));
             return toCoreResponse(fallbackResponse);
+        }
+    }
+
+    public void queryStream(CoreQueryRequest request, SseEmitter emitter) {
+        OrchestrateRequest orchestrateRequest = new OrchestrateRequest(
+                request.queryUid(),
+                request.traceId(),
+                request.conversationUid(),
+                request.message(),
+                request.document()
+        );
+        try {
+            aiGatewayService.streamOrchestrateChat(orchestrateRequest, emitter);
+        } catch (RuntimeException e) {
+            try {
+                OrchestrateResponse fallback = aiGatewayService.fallbackResponse("FALLBACK", "ORCHESTRATOR_CHAT_FAILED");
+                emitter.send(SseEmitter.event().data("{\"type\":\"done\",\"targetAgent\":\"FALLBACK\",\"fallbackUsed\":true,\"answer\":\"" + fallback.answer() + "\",\"requiresDocumentInput\":false}"));
+                emitter.complete();
+            } catch (Exception ex) {
+                emitter.completeWithError(ex);
+            }
         }
     }
 
