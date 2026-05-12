@@ -10,12 +10,15 @@ public interface AiOrchestratorClient {
 
     String ROUTE_ENDPOINT = "/orchestrator/route";
     String ORCHESTRATOR_CHAT_ENDPOINT = "/orchestrator/chat";
+    String ORCHESTRATOR_CHAT_STREAM_ENDPOINT = "/orchestrator/chat/stream";
 
     RouteResponse route(RouteRequest request);
 
     OrchestrateResponse orchestrateChat(OrchestrateRequest request);
 
     OrchestrateResponse chat(TargetAgent targetAgent, OrchestrateRequest request);
+
+    void streamOrchestrateChat(OrchestrateRequest request, org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter);
 
     String endpointFor(TargetAgent targetAgent);
 }

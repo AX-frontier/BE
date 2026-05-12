@@ -5,12 +5,15 @@ import com.axprontier.api.ai.dto.OrchestrateResponse;
 import com.axprontier.api.ai.dto.RouteRequest;
 import com.axprontier.api.ai.dto.RouteResponse;
 import com.axprontier.api.ai.dto.TargetAgent;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.time.Duration;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Component
 public class HttpAiOrchestratorClient implements AiOrchestratorClient {
@@ -70,6 +73,27 @@ public class HttpAiOrchestratorClient implements AiOrchestratorClient {
                 .body(request)
                 .retrieve()
                 .body(OrchestrateResponse.class);
+    }
+
+    @Override
+    public void streamOrchestrateChat(OrchestrateRequest request, SseEmitter emitter) {
+        restClient.post()
+                .uri(ORCHESTRATOR_CHAT_STREAM_ENDPOINT)
+                .body(request)
+                .exchange((req, resp) -> {
+                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(resp.getBody()))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) {
+                            if (line.startsWith("data: ")) {
+                                emitter.send(SseEmitter.event().data(line.substring(6)));
+                            }
+                        }
+                        emitter.complete();
+                    } catch (Exception e) {
+                        emitter.completeWithError(e);
+                    }
+                    return null;
+                });
     }
 
     @Override
