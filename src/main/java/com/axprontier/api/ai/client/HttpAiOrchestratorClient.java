@@ -95,7 +95,7 @@ public class HttpAiOrchestratorClient implements AiOrchestratorClient {
     }
 
     @Override
-    public void streamOrchestrateChat(OrchestrateRequest request, SseEmitter emitter) {
+    public OrchestrateResponse streamOrchestrateChat(OrchestrateRequest request, SseEmitter emitter) {
         try {
             String body = objectMapper.writeValueAsString(request);
             HttpRequest httpRequest = HttpRequest.newBuilder()
@@ -110,16 +110,36 @@ public class HttpAiOrchestratorClient implements AiOrchestratorClient {
 
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(response.body()))) {
                 String line;
+                OrchestrateResponse finalResponse = null;
                 while ((line = reader.readLine()) != null) {
                     if (line.startsWith("data: ")) {
-                        emitter.send(SseEmitter.event().data(line.substring(6)));
+                        String data = line.substring(6);
+                        emitter.send(SseEmitter.event().data(data));
+                        finalResponse = readDoneResponse(data, finalResponse);
                     }
                 }
                 emitter.complete();
+                return finalResponse;
             }
         } catch (Exception e) {
             log.error("SSE stream failed: {} {}", e.getClass().getSimpleName(), e.getMessage(), e);
             emitter.completeWithError(e);
+            return null;
+        }
+    }
+
+    private OrchestrateResponse readDoneResponse(String data, OrchestrateResponse previous) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(data);
+            if (!"done".equals(node.path("type").asText())) {
+                return previous;
+            }
+            if (node instanceof com.fasterxml.jackson.databind.node.ObjectNode objectNode) {
+                objectNode.remove("type");
+            }
+            return objectMapper.treeToValue(node, OrchestrateResponse.class);
+        } catch (Exception exception) {
+            return previous;
         }
     }
 

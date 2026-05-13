@@ -6,6 +6,7 @@ import com.axprontier.api.ai.dto.TargetAgent;
 import com.axprontier.api.ai.service.AiGatewayService;
 import com.axprontier.api.conversation.entity.Conversation;
 import com.axprontier.api.conversation.repository.ConversationRepository;
+import com.axprontier.api.query.dto.CoreQueryRequest;
 import com.axprontier.api.query.dto.CoreQueryResponse;
 import com.axprontier.api.query.entity.Query;
 import com.axprontier.api.query.repository.QueryRepository;
@@ -80,6 +81,32 @@ public class DocumentReviewService {
             logResult(request, fallbackResponse, "FAILED", startedAt);
             return toCoreResponse(fallbackResponse);
         }
+    }
+
+    public void recordStreamedReview(CoreQueryRequest request, OrchestrateResponse response) {
+        if (!isDocumentReviewResult(request, response)) {
+            return;
+        }
+        DocumentReviewRequest reviewRequest = new DocumentReviewRequest(
+                request.queryUid(),
+                request.traceId(),
+                request.conversationUid(),
+                request.userId(),
+                request.message(),
+                request.document()
+        );
+        transactionTemplate.executeWithoutResult(status -> {
+            Query query = saveReviewQuery(reviewRequest);
+            saveReviewArtifacts(query, reviewRequest, response);
+        });
+    }
+
+    private boolean isDocumentReviewResult(CoreQueryRequest request, OrchestrateResponse response) {
+        if (request.document() == null || response == null) {
+            return false;
+        }
+        return TargetAgent.from(response.targetAgent()) == TargetAgent.DOCUMENT_REVIEW
+                && !response.requiresDocumentInput();
     }
 
     private Query saveReviewQuery(DocumentReviewRequest request) {

@@ -18,7 +18,7 @@ public interface AiOrchestratorClient {
 
     OrchestrateResponse chat(TargetAgent targetAgent, OrchestrateRequest request);
 
-    void streamOrchestrateChat(OrchestrateRequest request, org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter);
+    OrchestrateResponse streamOrchestrateChat(OrchestrateRequest request, org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter);
 
     String endpointFor(TargetAgent targetAgent);
 }
