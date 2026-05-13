@@ -160,7 +160,8 @@ class DocumentReviewServiceTest {
                 List.of(),
                 List.of(),
                 Map.of("content", "2026. 4. 2."),
-                "검토 결과"
+                "검토 결과",
+                false
         );
     }
 }
