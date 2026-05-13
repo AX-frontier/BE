@@ -1,8 +1,6 @@
 package com.axprontier.api.query.controller;
 
-import com.axprontier.api.global.apiPayload.ApiResponse;
 import com.axprontier.api.query.dto.CoreQueryRequest;
-import com.axprontier.api.query.dto.CoreQueryResponse;
 import com.axprontier.api.query.service.CoreOrchestratorService;
 import jakarta.validation.Valid;
 import java.util.concurrent.CompletableFuture;
@@ -19,11 +17,6 @@ public class CoreQueryController {
 
     public CoreQueryController(CoreOrchestratorService coreOrchestratorService) {
         this.coreOrchestratorService = coreOrchestratorService;
-    }
-
-    @PostMapping("/query")
-    public ApiResponse<CoreQueryResponse> query(@Valid @RequestBody CoreQueryRequest request) {
-        return ApiResponse.ok(coreOrchestratorService.query(request));
     }
 
     @PostMapping(value = "/query/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
