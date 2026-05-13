@@ -9,6 +9,7 @@ import com.axprontier.api.ai.dto.TargetAgent;
 import java.math.BigDecimal;
 import java.util.List;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Service
 public class AiGatewayService {
@@ -53,8 +54,13 @@ public class AiGatewayService {
                 null,
                 null,
                 null,
-                null
+                null,
+                false
         );
+    }
+
+    public void streamOrchestrateChat(OrchestrateRequest request, SseEmitter emitter) {
+        aiOrchestratorClient.streamOrchestrateChat(request, emitter);
     }
 
     public String endpointFor(TargetAgent targetAgent) {
