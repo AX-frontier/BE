@@ -59,8 +59,8 @@ public class AiGatewayService {
         );
     }
 
-    public void streamOrchestrateChat(OrchestrateRequest request, SseEmitter emitter) {
-        aiOrchestratorClient.streamOrchestrateChat(request, emitter);
+    public OrchestrateResponse streamOrchestrateChat(OrchestrateRequest request, SseEmitter emitter) {
+        return aiOrchestratorClient.streamOrchestrateChat(request, emitter);
     }
 
     public String endpointFor(TargetAgent targetAgent) {
