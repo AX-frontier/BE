@@ -5,19 +5,34 @@ import com.axprontier.api.ai.dto.OrchestrateResponse;
 import com.axprontier.api.ai.dto.RouteRequest;
 import com.axprontier.api.ai.dto.RouteResponse;
 import com.axprontier.api.ai.dto.TargetAgent;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Component
 public class HttpAiOrchestratorClient implements AiOrchestratorClient {
 
+    private static final Logger log = LoggerFactory.getLogger(HttpAiOrchestratorClient.class);
+
     private final RestClient restClient;
+    private final HttpClient streamingHttpClient;
+    private final String aiServerBaseUrl;
     private final String libraryPath;
     private final String documentReviewPath;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Autowired
     public HttpAiOrchestratorClient(
@@ -35,12 +50,19 @@ public class HttpAiOrchestratorClient implements AiOrchestratorClient {
                 .baseUrl(aiServerBaseUrl)
                 .requestFactory(requestFactory)
                 .build();
+        this.streamingHttpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(Duration.ofSeconds(30))
+                .build();
+        this.aiServerBaseUrl = aiServerBaseUrl;
         this.libraryPath = libraryPath;
         this.documentReviewPath = documentReviewPath;
     }
 
     HttpAiOrchestratorClient(RestClient restClient, String libraryPath, String documentReviewPath) {
         this.restClient = restClient;
+        this.streamingHttpClient = HttpClient.newHttpClient();
+        this.aiServerBaseUrl = "";
         this.libraryPath = libraryPath;
         this.documentReviewPath = documentReviewPath;
     }
@@ -70,6 +92,35 @@ public class HttpAiOrchestratorClient implements AiOrchestratorClient {
                 .body(request)
                 .retrieve()
                 .body(OrchestrateResponse.class);
+    }
+
+    @Override
+    public void streamOrchestrateChat(OrchestrateRequest request, SseEmitter emitter) {
+        try {
+            String body = objectMapper.writeValueAsString(request);
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(aiServerBaseUrl + ORCHESTRATOR_CHAT_STREAM_ENDPOINT))
+                    .timeout(Duration.ofSeconds(120))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+
+            HttpResponse<java.io.InputStream> response = streamingHttpClient.send(
+                    httpRequest, HttpResponse.BodyHandlers.ofInputStream());
+
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(response.body()))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.startsWith("data: ")) {
+                        emitter.send(SseEmitter.event().data(line.substring(6)));
+                    }
+                }
+                emitter.complete();
+            }
+        } catch (Exception e) {
+            log.error("SSE stream failed: {} {}", e.getClass().getSimpleName(), e.getMessage(), e);
+            emitter.completeWithError(e);
+        }
     }
 
     @Override
