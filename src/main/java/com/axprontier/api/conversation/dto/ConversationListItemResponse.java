@@ -3,10 +3,11 @@ package com.axprontier.api.conversation.dto;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-public record ConversationResponse(
+public record ConversationListItemResponse(
         UUID conversationUid,
         String title,
-        String userId,
-        LocalDateTime createdAt
+        String lastMessagePreview,
+        int messageCount,
+        LocalDateTime updatedAt
 ) {
 }
