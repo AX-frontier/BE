@@ -6,6 +6,7 @@ import com.axprontier.api.ai.dto.RouteRequest;
 import com.axprontier.api.ai.dto.RouteResponse;
 import com.axprontier.api.ai.dto.TargetAgent;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.URI;
@@ -32,7 +33,8 @@ public class HttpAiOrchestratorClient implements AiOrchestratorClient {
     private final String aiServerBaseUrl;
     private final String libraryPath;
     private final String documentReviewPath;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     @Autowired
     public HttpAiOrchestratorClient(

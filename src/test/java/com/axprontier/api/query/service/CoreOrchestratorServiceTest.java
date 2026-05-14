@@ -8,7 +8,6 @@ import com.axprontier.api.ai.dto.OrchestrateRequest;
 import com.axprontier.api.ai.dto.OrchestrateResponse;
 import com.axprontier.api.ai.service.AiGatewayService;
 import com.axprontier.api.query.dto.CoreQueryRequest;
-import com.axprontier.api.review.service.DocumentReviewService;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -19,10 +18,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 class CoreOrchestratorServiceTest {
 
     private final AiGatewayService aiGatewayService = org.mockito.Mockito.mock(AiGatewayService.class);
-    private final DocumentReviewService documentReviewService = org.mockito.Mockito.mock(DocumentReviewService.class);
+    private final StreamQueryPersistenceService streamQueryPersistenceService = org.mockito.Mockito.mock(StreamQueryPersistenceService.class);
     private final CoreOrchestratorService service = new CoreOrchestratorService(
             aiGatewayService,
-            documentReviewService
+            streamQueryPersistenceService
     );
 
     @Test
@@ -53,6 +52,6 @@ class CoreOrchestratorServiceTest {
 
         service.queryStream(request, emitter);
 
-        verify(documentReviewService).recordStreamedReview(request, response);
+        verify(streamQueryPersistenceService).saveCompleted(request, response);
     }
 }
