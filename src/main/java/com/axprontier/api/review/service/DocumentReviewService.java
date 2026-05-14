@@ -97,6 +97,9 @@ public class DocumentReviewService {
         );
         transactionTemplate.executeWithoutResult(status -> {
             Query query = saveReviewQuery(reviewRequest);
+            if (reviewRequestRepository.existsByQuery(query)) {
+                return;
+            }
             saveReviewArtifacts(query, reviewRequest, response);
         });
     }

@@ -54,4 +54,28 @@ public class QueryResponse extends BaseEntity {
         this.confidence = confidence;
         this.fallbackReason = fallbackReason;
     }
+
+    public Query getQuery() {
+        return query;
+    }
+
+    public String getAnswerText() {
+        return answerText;
+    }
+
+    public Map<String, Object> getSourcesJson() {
+        return sourcesJson;
+    }
+
+    public int getSourceCount() {
+        return sourceCount;
+    }
+
+    public BigDecimal getConfidence() {
+        return confidence;
+    }
+
+    public String getFallbackReason() {
+        return fallbackReason;
+    }
 }
