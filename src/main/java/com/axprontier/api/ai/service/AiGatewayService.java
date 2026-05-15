@@ -53,6 +53,8 @@ public class AiGatewayService {
                 null,
                 null,
                 null,
+                List.of(),
+                false,
                 null,
                 null,
                 false
