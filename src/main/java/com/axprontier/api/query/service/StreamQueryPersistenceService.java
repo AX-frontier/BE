@@ -19,6 +19,7 @@ import com.axprontier.api.query.repository.QueryResponseRepository;
 import com.axprontier.api.query.repository.QueryRouteRepository;
 import com.axprontier.api.review.service.DocumentReviewService;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Service;
@@ -94,7 +95,7 @@ public class StreamQueryPersistenceService {
         queryResponseRepository.save(new QueryResponse(
                 query,
                 answerText,
-                Map.of("sources", terminalResponse.sources() == null ? List.of() : terminalResponse.sources()),
+                buildResponseMetadata(request, terminalResponse),
                 terminalResponse.sources() == null ? 0 : terminalResponse.sources().size(),
                 terminalResponse.confidence(),
                 terminalResponse.fallbackReason()
@@ -106,6 +107,45 @@ public class StreamQueryPersistenceService {
         );
         librarySearchLogService.saveIfLibrarySearch(query, terminalResponse);
         documentReviewService.recordStreamedReview(request, terminalResponse);
+    }
+
+    private Map<String, Object> buildResponseMetadata(CoreQueryRequest request, OrchestrateResponse response) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("sources", response.sources() == null ? List.of() : response.sources());
+        if (isCompletedDocumentReview(request, response)) {
+            metadata.put("documentReview", buildDocumentReviewMetadata(request, response));
+        }
+        return metadata;
+    }
+
+    private boolean isCompletedDocumentReview(CoreQueryRequest request, OrchestrateResponse response) {
+        String targetAgent = response.targetAgent() == null ? "" : response.targetAgent();
+        return request.document() != null
+                && !response.requiresDocumentInput()
+                && ("DOCUMENT_REVIEW".equalsIgnoreCase(targetAgent) || "document_review".equalsIgnoreCase(targetAgent));
+    }
+
+    private Map<String, Object> buildDocumentReviewMetadata(CoreQueryRequest request, OrchestrateResponse response) {
+        Map<String, Object> review = new LinkedHashMap<>();
+        putIfNotNull(review, "originalText", request.document().get("bodyText"));
+        putIfNotNull(review, "originalHtml", request.document().get("bodyHtml"));
+        putIfNotNull(review, "summary", response.summary());
+        putIfNotNull(review, "findings", response.findings());
+        putIfNotNull(review, "criterionResults", response.criterionResults());
+        putIfNotNull(review, "checkRequiredItems", response.checkRequiredItems());
+        putIfNotNull(review, "formatNoticeItems", response.formatNoticeItems());
+        putIfNotNull(review, "extractedTables", response.extractedTables());
+        review.put("tableChecks", response.tableChecks() == null ? List.of() : response.tableChecks());
+        review.put("tableChecksAvailable", Boolean.TRUE.equals(response.tableChecksAvailable()));
+        putIfNotNull(review, "revisedDocument", response.revisedDocument());
+        putIfNotNull(review, "reviewMarkdown", response.reviewMarkdown());
+        return review;
+    }
+
+    private void putIfNotNull(Map<String, Object> target, String key, Object value) {
+        if (value != null) {
+            target.put(key, value);
+        }
     }
 
     private Conversation findOrCreateConversation(CoreQueryRequest request) {
