@@ -2,6 +2,7 @@ package com.axprontier.api.review.service;
 
 import com.axprontier.api.ai.dto.OrchestrateRequest;
 import com.axprontier.api.ai.dto.OrchestrateResponse;
+import com.axprontier.api.ai.dto.TableCheckDto;
 import com.axprontier.api.ai.dto.TargetAgent;
 import com.axprontier.api.ai.service.AiGatewayService;
 import com.axprontier.api.conversation.entity.Conversation;
@@ -19,6 +20,7 @@ import com.axprontier.api.review.repository.ReviewRequestRepository;
 import com.axprontier.api.review.repository.ReviewResultRepository;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -208,6 +210,10 @@ public class DocumentReviewService {
     }
 
     private CoreQueryResponse toCoreResponse(OrchestrateResponse response) {
+        List<TableCheckDto> tableChecks = response.tableChecks() == null
+                ? List.of()
+                : response.tableChecks();
+        boolean tableChecksAvailable = Boolean.TRUE.equals(response.tableChecksAvailable());
         return new CoreQueryResponse(
                 response.targetAgent(),
                 response.intent(),
@@ -225,6 +231,8 @@ public class DocumentReviewService {
                 response.checkRequiredItems(),
                 response.formatNoticeItems(),
                 response.extractedTables(),
+                tableChecks,
+                tableChecksAvailable,
                 response.revisedDocument(),
                 response.reviewMarkdown(),
                 false

@@ -22,6 +22,7 @@ import com.axprontier.api.review.entity.ReviewResult;
 import com.axprontier.api.review.repository.ReviewFindingRepository;
 import com.axprontier.api.review.repository.ReviewRequestRepository;
 import com.axprontier.api.review.repository.ReviewResultRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -124,6 +125,56 @@ class DocumentReviewServiceTest {
         assertThat(ReflectionTestUtils.getField(secondFinding, "lineEnd")).isNull();
     }
 
+    @Test
+    void deserializesTableChecksFromAiResponse() throws Exception {
+        String payload = """
+                {
+                  "targetAgent": "DOCUMENT_REVIEW",
+                  "intent": "DOCUMENT_REVIEW",
+                  "answer": "검토 결과",
+                  "sources": [],
+                  "confidence": 0.82,
+                  "fallbackUsed": false,
+                  "unknownFutureField": "ignored",
+                  "tableChecks": [
+                    {
+                      "id": "table-check-001",
+                      "table_index": 1,
+                      "table_title": "수입 정산 상세 내역",
+                      "category": "표 검토",
+                      "severity": "HIGH",
+                      "status": "CHECK_REQUIRED",
+                      "message": "금액 불일치",
+                      "suggestion": "원본 표 확인",
+                      "evidence": {"difference": 14920}
+                    }
+                  ],
+                  "tableChecksAvailable": true,
+                  "reviewMarkdown": "검토 결과",
+                  "requiresDocumentInput": false
+                }
+                """;
+
+        OrchestrateResponse response = new ObjectMapper().readValue(payload, OrchestrateResponse.class);
+
+        assertThat(response.tableChecks()).hasSize(1);
+        assertThat(response.tableChecks().get(0).tableIndex()).isEqualTo(1);
+        assertThat(response.tableChecks().get(0).tableTitle()).isEqualTo("수입 정산 상세 내역");
+        assertThat(response.tableChecksAvailable()).isTrue();
+    }
+
+    @Test
+    void fallbackResponseMarksTableChecksUnavailable() {
+        AiGatewayService gatewayService = new AiGatewayService(
+                org.mockito.Mockito.mock(com.axprontier.api.ai.client.AiOrchestratorClient.class)
+        );
+
+        OrchestrateResponse response = gatewayService.fallbackResponse("FALLBACK", "AI_UNAVAILABLE");
+
+        assertThat(response.tableChecks()).isEmpty();
+        assertThat(response.tableChecksAvailable()).isFalse();
+    }
+
     private OrchestrateResponse documentReviewResponse() {
         return new OrchestrateResponse(
                 "DOCUMENT_REVIEW",
@@ -159,6 +210,8 @@ class DocumentReviewServiceTest {
                 List.of(),
                 List.of(),
                 List.of(),
+                List.of(),
+                true,
                 Map.of("content", "2026. 4. 2."),
                 "검토 결과",
                 false
