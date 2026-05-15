@@ -1,5 +1,6 @@
 package com.axprontier.api.query.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -7,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.axprontier.api.ai.dto.OrchestrateResponse;
+import com.axprontier.api.ai.dto.TableCheckDto;
 import com.axprontier.api.ai.service.AiGatewayService;
 import com.axprontier.api.conversation.entity.Conversation;
 import com.axprontier.api.conversation.repository.ConversationRepository;
@@ -26,6 +28,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class StreamQueryPersistenceServiceTest {
 
@@ -100,6 +103,37 @@ class StreamQueryPersistenceServiceTest {
                 .isInstanceOf(GeneralException.class);
     }
 
+    @Test
+    void persistsDocumentReviewMetadataForConversationRestore() {
+        UUID conversationUid = UUID.randomUUID();
+        Conversation conversation = new Conversation(conversationUid, "전자결재 문서", "local-fe-user");
+        Map<String, Object> document = Map.of(
+                "bodyText", "붙임  1. 안내문 1부.  끝.",
+                "bodyHtml", "<p>붙임  1. 안내문 1부.  끝.</p>"
+        );
+        CoreQueryRequest request = request(conversationUid, "전자결재 문서를 검토해줘", document);
+        Query query = new Query(request.queryUid(), conversation, request.message(), "WEB");
+        OrchestrateResponse response = documentReviewResponse();
+        when(conversationRepository.findByConversationUid(conversationUid)).thenReturn(Optional.of(conversation));
+        when(queryRepository.findByQueryUid(request.queryUid())).thenReturn(Optional.empty());
+        when(queryRepository.save(any(Query.class))).thenReturn(query);
+        when(queryResponseRepository.findByQuery(query)).thenReturn(Optional.empty());
+        ArgumentCaptor<QueryResponse> responseCaptor = ArgumentCaptor.forClass(QueryResponse.class);
+
+        service.saveCompleted(request, response);
+
+        verify(queryResponseRepository).save(responseCaptor.capture());
+        Map<String, Object> metadata = responseCaptor.getValue().getSourcesJson();
+        assertThat(metadata).containsKey("documentReview");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> review = (Map<String, Object>) metadata.get("documentReview");
+        assertThat(review.get("originalText")).isEqualTo(document.get("bodyText"));
+        assertThat(review.get("originalHtml")).isEqualTo(document.get("bodyHtml"));
+        assertThat(review.get("reviewMarkdown")).isEqualTo("검토 결과");
+        assertThat(review.get("tableChecksAvailable")).isEqualTo(true);
+        assertThat((List<?>) review.get("tableChecks")).hasSize(1);
+    }
+
     private CoreQueryRequest request(UUID conversationUid, String message, Map<String, Object> document) {
         return new CoreQueryRequest(
                 UUID.randomUUID(),
@@ -123,6 +157,42 @@ class StreamQueryPersistenceServiceTest {
                 null,
                 null,
                 null
+        );
+    }
+
+    private OrchestrateResponse documentReviewResponse() {
+        return new OrchestrateResponse(
+                "DOCUMENT_REVIEW",
+                "DOCUMENT_REVIEW",
+                "문서 검토 결과",
+                List.of(),
+                BigDecimal.valueOf(0.9),
+                false,
+                null,
+                null,
+                null,
+                null,
+                Map.of("totalFindingCount", 1, "highCount", 0, "mediumCount", 0, "lowCount", 1),
+                List.of(Map.of("ruleCode", "END_MARKER")),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(new TableCheckDto(
+                        "table-check-1",
+                        1,
+                        "표 1",
+                        "소요예산",
+                        "MEDIUM",
+                        "CHECK_REQUIRED",
+                        "소요예산 표 확인이 필요합니다.",
+                        "원본 표에서 직접 확인해 주세요.",
+                        Map.of("missingColumns", List.of("세목코드"))
+                )),
+                true,
+                Map.of("format", "plain_text", "content", "수정 본문", "htmlContent", "<p>수정 본문</p>"),
+                "검토 결과",
+                false
         );
     }
 }
