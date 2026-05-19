@@ -1,11 +1,13 @@
 package com.axprontier.api.query.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.axprontier.api.ai.dto.MatchedBookDto;
 import com.axprontier.api.ai.dto.OrchestrateResponse;
 import com.axprontier.api.ai.service.AiGatewayService;
 import com.axprontier.api.conversation.entity.Conversation;
@@ -26,6 +28,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class StreamQueryPersistenceServiceTest {
 
@@ -69,6 +72,44 @@ class StreamQueryPersistenceServiceTest {
         verify(queryResponseRepository).save(any(QueryResponse.class));
         verify(librarySearchLogService).saveIfLibrarySearch(query, response);
         verify(documentReviewService).recordStreamedReview(request, response);
+    }
+
+    @Test
+    void savesLibraryBookMatchesIntoResponseMetadata() {
+        UUID conversationUid = UUID.randomUUID();
+        Conversation conversation = new Conversation(conversationUid, "파이썬 책 추천", "local-fe-user");
+        CoreQueryRequest request = request(conversationUid, "파이썬 책 추천해줘", null);
+        Query query = new Query(request.queryUid(), conversation, request.message(), "WEB");
+        OrchestrateResponse response = new OrchestrateResponse(
+                "LIBRARY",
+                "BOOK_SEARCH",
+                "추천 도서를 찾았습니다.",
+                List.of(),
+                BigDecimal.valueOf(0.91),
+                false,
+                null,
+                "파이썬",
+                1,
+                List.of(sampleBook())
+        );
+        when(conversationRepository.findByConversationUid(conversationUid)).thenReturn(Optional.of(conversation));
+        when(queryRepository.findByQueryUid(request.queryUid())).thenReturn(Optional.empty());
+        when(queryRepository.save(any(Query.class))).thenReturn(query);
+        when(queryResponseRepository.findByQuery(query)).thenReturn(Optional.empty());
+
+        service.saveCompleted(request, response);
+
+        ArgumentCaptor<QueryResponse> responseCaptor = ArgumentCaptor.forClass(QueryResponse.class);
+        verify(queryResponseRepository).save(responseCaptor.capture());
+        Map<String, Object> sourcesJson = responseCaptor.getValue().getSourcesJson();
+        assertThat(sourcesJson).containsKey("library");
+        assertThat(sourcesJson.get("library")).isInstanceOf(Map.class);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> library = (Map<String, Object>) sourcesJson.get("library");
+        assertThat(library)
+                .containsEntry("searchKeyword", "파이썬")
+                .containsEntry("resultCount", 1);
+        assertThat(library.get("matchedBooks")).isEqualTo(List.of(sampleBook()));
     }
 
     @Test
@@ -123,6 +164,23 @@ class StreamQueryPersistenceServiceTest {
                 null,
                 null,
                 null
+        );
+    }
+
+    private MatchedBookDto sampleBook() {
+        return new MatchedBookDto(
+                10L,
+                "BIB-1",
+                "REG-1",
+                "파이썬으로 코딩하는 물리",
+                "송오영",
+                "21세기사",
+                2021,
+                "005.133 ㅅ574ㅍ",
+                "단행본",
+                "LOC",
+                "인문자연과학자료실(5F)",
+                "3-A-4-a"
         );
     }
 }
