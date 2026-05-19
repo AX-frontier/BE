@@ -55,6 +55,7 @@ public class AiGatewayService {
                 null,
                 null,
                 null,
+                null,
                 false
         );
     }

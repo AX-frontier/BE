@@ -19,6 +19,7 @@ public record QueryCreateResponse(
         String searchKeyword,
         Integer resultCount,
         List<MatchedBookDto> matchedBooks,
+        java.util.Map<String, Object> mapResult,
         boolean requiresDocumentInput
 ) {
 }

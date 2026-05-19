@@ -108,6 +108,27 @@ class QueryServiceTest {
     }
 
     @Test
+    void returnsAndStoresCampusMapResult() {
+        UUID conversationUid = UUID.randomUUID();
+        Conversation conversation = new Conversation("캠퍼스 위치 질문");
+        QueryCreateRequest request = new QueryCreateRequest("상상관 위치 알려줘", "WEB");
+        OrchestrateResponse mapResponse = campusMapResponse();
+        arrangePersistence(conversationUid, conversation);
+        when(aiGatewayService.orchestrateChat(any(OrchestrateRequest.class))).thenReturn(mapResponse);
+
+        QueryCreateResponse response = service.create(conversationUid, request);
+
+        assertThat(response.targetAgent()).isEqualTo("CAMPUS_MAP");
+        assertThat(response.mapResult()).containsEntry("campusId", "hansung");
+
+        ArgumentCaptor<QueryResponse> queryResponseCaptor = ArgumentCaptor.forClass(QueryResponse.class);
+        verify(queryResponseRepository).save(queryResponseCaptor.capture());
+        QueryResponse savedResponse = queryResponseCaptor.getValue();
+        assertThat(ReflectionTestUtils.getField(savedResponse, "sourcesJson"))
+                .isEqualTo(Map.of("sources", List.of(), "mapResult", sampleMapResult()));
+    }
+
+    @Test
     void forwardsDocumentDtoToExecutableOrchestratorAndStoresDocumentReviewResponse() {
         UUID conversationUid = UUID.randomUUID();
         Conversation conversation = new Conversation("문서 검토 질문");
@@ -215,6 +236,39 @@ class QueryServiceTest {
                 null,
                 null,
                 null
+        );
+    }
+
+    private OrchestrateResponse campusMapResponse() {
+        return new OrchestrateResponse(
+                "CAMPUS_MAP",
+                "PLACE_LOOKUP",
+                "상상관은 캠퍼스 중앙에 있습니다.",
+                List.of(),
+                BigDecimal.valueOf(0.91),
+                false,
+                null,
+                "상상관",
+                1,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                sampleMapResult(),
+                false
+        );
+    }
+
+    private Map<String, Object> sampleMapResult() {
+        return Map.of(
+                "campusId", "hansung",
+                "mode", "place",
+                "selectedPlace", Map.of("id", "sangsang-hall", "name", "상상관")
         );
     }
 

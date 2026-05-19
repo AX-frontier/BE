@@ -23,6 +23,7 @@ public record OrchestrateResponse(
         List<Map<String, Object>> extractedTables,
         Map<String, Object> revisedDocument,
         String reviewMarkdown,
+        Map<String, Object> mapResult,
         boolean requiresDocumentInput
 ) {
     public OrchestrateResponse(
@@ -48,6 +49,7 @@ public record OrchestrateResponse(
                 searchKeyword,
                 resultCount,
                 matchedBooks,
+                null,
                 null,
                 null,
                 null,

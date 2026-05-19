@@ -115,13 +115,17 @@ public class StreamQueryPersistenceService {
         if (isLibrarySearchResponse(response)) {
             metadata.put("library", buildLibrarySearchMetadata(response));
         }
+        if (response.mapResult() != null) {
+            metadata.put("mapResult", response.mapResult());
+        }
         return metadata;
     }
 
     private boolean isLibrarySearchResponse(OrchestrateResponse response) {
-        return response.searchKeyword() != null
+        return TargetAgent.from(response.targetAgent()) == TargetAgent.LIBRARY
+                && (response.searchKeyword() != null
                 || response.resultCount() != null
-                || (response.matchedBooks() != null && !response.matchedBooks().isEmpty());
+                || (response.matchedBooks() != null && !response.matchedBooks().isEmpty()));
     }
 
     private Map<String, Object> buildLibrarySearchMetadata(OrchestrateResponse response) {

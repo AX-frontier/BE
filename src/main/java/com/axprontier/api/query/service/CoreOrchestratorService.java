@@ -31,7 +31,8 @@ public class CoreOrchestratorService {
                 request.traceId(),
                 request.conversationUid(),
                 request.message(),
-                request.document()
+                request.document(),
+                request.clientLocation()
         );
         OrchestrateResponse response;
         try {

@@ -85,7 +85,12 @@ public class ConversationService {
             QueryResponse response = responseByQuery.get(query.getId());
             if (response != null) {
                 Map<String, Object> metadata = new LinkedHashMap<>();
-                metadata.put("sources", response.getSourcesJson() == null ? Map.of() : response.getSourcesJson());
+                if (response.getSourcesJson() == null || response.getSourcesJson().isEmpty()) {
+                    metadata.put("sources", List.of());
+                } else {
+                    metadata.putAll(response.getSourcesJson());
+                    metadata.putIfAbsent("sources", List.of());
+                }
                 metadata.put("sourceCount", response.getSourceCount());
                 metadata.put("confidence", response.getConfidence());
                 metadata.put("fallbackReason", response.getFallbackReason());

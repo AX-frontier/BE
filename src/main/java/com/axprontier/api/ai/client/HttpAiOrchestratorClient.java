@@ -151,6 +151,7 @@ public class HttpAiOrchestratorClient implements AiOrchestratorClient {
             case MAIN -> "/main/chat";
             case LIBRARY -> libraryPath;
             case DOCUMENT_REVIEW -> documentReviewPath;
+            case CAMPUS_MAP -> "/campus-map/chat";
             case FALLBACK -> "";
         };
     }
