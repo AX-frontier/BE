@@ -161,6 +161,7 @@ class DocumentReviewServiceTest {
                 List.of(),
                 Map.of("content", "2026. 4. 2."),
                 "검토 결과",
+                null,
                 false
         );
     }
