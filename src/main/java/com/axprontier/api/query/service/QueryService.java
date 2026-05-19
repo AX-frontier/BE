@@ -26,6 +26,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -109,7 +110,7 @@ public class QueryService {
         queryResponseRepository.save(new QueryResponse(
                 query,
                 aiResponse.answer(),
-                Map.of("sources", aiResponse.sources() == null ? List.of() : aiResponse.sources()),
+                buildResponseMetadata(aiResponse),
                 aiResponse.sources() == null ? 0 : aiResponse.sources().size(),
                 aiResponse.confidence(),
                 aiResponse.fallbackReason()
@@ -208,6 +209,35 @@ public class QueryService {
                 aiResponse.matchedBooks(),
                 aiResponse.requiresDocumentInput()
         );
+    }
+
+    private Map<String, Object> buildResponseMetadata(OrchestrateResponse response) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("sources", response.sources() == null ? List.of() : response.sources());
+        if (isLibrarySearchResponse(response)) {
+            metadata.put("library", buildLibrarySearchMetadata(response));
+        }
+        return metadata;
+    }
+
+    private boolean isLibrarySearchResponse(OrchestrateResponse response) {
+        return response.searchKeyword() != null
+                || response.resultCount() != null
+                || (response.matchedBooks() != null && !response.matchedBooks().isEmpty());
+    }
+
+    private Map<String, Object> buildLibrarySearchMetadata(OrchestrateResponse response) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        putIfNotNull(metadata, "searchKeyword", response.searchKeyword());
+        putIfNotNull(metadata, "resultCount", response.resultCount());
+        metadata.put("matchedBooks", response.matchedBooks() == null ? List.of() : response.matchedBooks());
+        return metadata;
+    }
+
+    private void putIfNotNull(Map<String, Object> metadata, String key, Object value) {
+        if (value != null) {
+            metadata.put(key, value);
+        }
     }
 
     private String safeMessage(Exception exception) {
