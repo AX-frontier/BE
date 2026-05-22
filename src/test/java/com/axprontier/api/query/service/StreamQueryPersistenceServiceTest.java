@@ -75,6 +75,41 @@ class StreamQueryPersistenceServiceTest {
     }
 
     @Test
+    void savesDocumentReviewPayloadIntoResponseMetadata() {
+        UUID conversationUid = UUID.randomUUID();
+        Conversation conversation = new Conversation(conversationUid, "전자결재 문서", "local-fe-user");
+        CoreQueryRequest request = request(conversationUid, "전자결재 문서를 검토해줘", Map.of(
+                "bodyText", "원문 텍스트",
+                "bodyHtml", "<p>원문 텍스트</p>"
+        ));
+        Query query = new Query(request.queryUid(), conversation, request.message(), "WEB");
+        OrchestrateResponse response = documentReviewResponse();
+        when(conversationRepository.findByConversationUid(conversationUid)).thenReturn(Optional.of(conversation));
+        when(queryRepository.findByQueryUid(request.queryUid())).thenReturn(Optional.empty());
+        when(queryRepository.save(any(Query.class))).thenReturn(query);
+        when(queryResponseRepository.findByQuery(query)).thenReturn(Optional.empty());
+
+        service.saveCompleted(request, response);
+
+        ArgumentCaptor<QueryResponse> responseCaptor = ArgumentCaptor.forClass(QueryResponse.class);
+        verify(queryResponseRepository).save(responseCaptor.capture());
+        Map<String, Object> sourcesJson = responseCaptor.getValue().getSourcesJson();
+        assertThat(sourcesJson).containsKey("documentReview");
+        assertThat(sourcesJson.get("documentReview")).isInstanceOf(Map.class);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> documentReview = (Map<String, Object>) sourcesJson.get("documentReview");
+        assertThat(documentReview)
+                .containsEntry("originalText", "원문 텍스트")
+                .containsEntry("originalHtml", "<p>원문 텍스트</p>")
+                .containsEntry("reviewMarkdown", "검토 마크다운");
+        assertThat(documentReview.get("revisedDocument")).isEqualTo(Map.of(
+                "format", "plain_text",
+                "content", "수정 텍스트",
+                "htmlContent", "<p>수정 텍스트</p>"
+        ));
+    }
+
+    @Test
     void savesLibraryBookMatchesIntoResponseMetadata() {
         UUID conversationUid = UUID.randomUUID();
         Conversation conversation = new Conversation(conversationUid, "파이썬 책 추천", "local-fe-user");
@@ -164,6 +199,43 @@ class StreamQueryPersistenceServiceTest {
                 null,
                 null,
                 null
+        );
+    }
+
+    private OrchestrateResponse documentReviewResponse() {
+        return new OrchestrateResponse(
+                "DOCUMENT_REVIEW",
+                "DOCUMENT_REVIEW",
+                "검토 마크다운",
+                List.of(),
+                BigDecimal.valueOf(0.82),
+                false,
+                null,
+                null,
+                null,
+                null,
+                Map.of("totalFindingCount", 1),
+                List.of(Map.of(
+                        "id", "f1",
+                        "category", "날짜 표기",
+                        "severity", "LOW",
+                        "lineStart", 1,
+                        "originalText", "2026-05-04",
+                        "suggestedText", "2026. 5. 4.",
+                        "reason", "날짜 표기 규칙"
+                )),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                Map.of(
+                        "format", "plain_text",
+                        "content", "수정 텍스트",
+                        "htmlContent", "<p>수정 텍스트</p>"
+                ),
+                "검토 마크다운",
+                null,
+                false
         );
     }
 

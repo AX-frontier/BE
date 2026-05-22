@@ -92,10 +92,11 @@ public class StreamQueryPersistenceService {
                 terminalResponse.fallbackUsed() || targetAgent == TargetAgent.FALLBACK ? "FAILED" : "COMPLETED"
         ));
         String answerText = terminalResponse.answer() == null ? "" : terminalResponse.answer();
+        Map<String, Object> responseMetadata = buildResponseMetadata(request, terminalResponse);
         queryResponseRepository.save(new QueryResponse(
                 query,
                 answerText,
-                buildResponseMetadata(terminalResponse),
+                responseMetadata,
                 terminalResponse.sources() == null ? 0 : terminalResponse.sources().size(),
                 terminalResponse.confidence(),
                 terminalResponse.fallbackReason()
@@ -109,9 +110,12 @@ public class StreamQueryPersistenceService {
         documentReviewService.recordStreamedReview(request, terminalResponse);
     }
 
-    private Map<String, Object> buildResponseMetadata(OrchestrateResponse response) {
+    private Map<String, Object> buildResponseMetadata(CoreQueryRequest request, OrchestrateResponse response) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("sources", response.sources() == null ? List.of() : response.sources());
+        if (isDocumentReviewResponse(response)) {
+            metadata.put("documentReview", buildDocumentReviewMetadata(request, response));
+        }
         if (isLibrarySearchResponse(response)) {
             metadata.put("library", buildLibrarySearchMetadata(response));
         }
@@ -134,6 +138,39 @@ public class StreamQueryPersistenceService {
         putIfNotNull(metadata, "resultCount", response.resultCount());
         metadata.put("matchedBooks", response.matchedBooks() == null ? List.of() : response.matchedBooks());
         return metadata;
+    }
+
+    private boolean isDocumentReviewResponse(OrchestrateResponse response) {
+        return "DOCUMENT_REVIEW".equalsIgnoreCase(response.targetAgent())
+                || response.revisedDocument() != null
+                || response.reviewMarkdown() != null;
+    }
+
+    private Map<String, Object> buildDocumentReviewMetadata(CoreQueryRequest request, OrchestrateResponse response) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        putIfNotNull(metadata, "originalText", documentString(request.document(), "bodyText"));
+        putIfNotNull(metadata, "originalHtml", documentString(request.document(), "bodyHtml"));
+        putIfNotNull(metadata, "answer", response.answer());
+        putIfNotNull(metadata, "confidence", response.confidence());
+        metadata.put("fallbackUsed", response.fallbackUsed());
+        putIfNotNull(metadata, "fallbackReason", response.fallbackReason());
+        putIfNotNull(metadata, "summary", response.summary());
+        putIfNotNull(metadata, "findings", response.findings());
+        putIfNotNull(metadata, "criterionResults", response.criterionResults());
+        putIfNotNull(metadata, "checkRequiredItems", response.checkRequiredItems());
+        putIfNotNull(metadata, "formatNoticeItems", response.formatNoticeItems());
+        putIfNotNull(metadata, "extractedTables", response.extractedTables());
+        putIfNotNull(metadata, "revisedDocument", response.revisedDocument());
+        putIfNotNull(metadata, "reviewMarkdown", response.reviewMarkdown());
+        return metadata;
+    }
+
+    private String documentString(Map<String, Object> document, String key) {
+        if (document == null) {
+            return null;
+        }
+        Object value = document.get(key);
+        return value instanceof String stringValue ? stringValue : null;
     }
 
     private void putIfNotNull(Map<String, Object> metadata, String key, Object value) {
